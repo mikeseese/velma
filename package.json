@@ -1,0 +1,19 @@
+{
+  "name": "solidity-debugger",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@gitlab.com/seeseplusplus/solidity-debugger.git"
+  },
+  "author": "Mike Seese",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://gitlab.com/seeseplusplus/solidity-debugger/issues"
+  },
+  "homepage": "https://gitlab.com/seeseplusplus/solidity-debugger#README"
+}
