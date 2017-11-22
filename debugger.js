@@ -9,7 +9,6 @@ client.connect(8455, "localhost", () => {
 
 client.on("data", (data) => {
   data = CircularJSON.parse(data);
-  console.log(data);
   const response = {
     "id": data.id,
     "type": "response",
