@@ -14,6 +14,7 @@ const BreakpointManager = require("../remix/src/code/breakpointManager");
 const Web3Providers = require('../remix/src/web3Provider/web3Providers');
 const GlobalRemixUtil = require('../remix/src/helpers/global');
 const SourceMappingDecoder = require('../remix/src/util/sourceMappingDecoder');
+const CodeUtils = require('../remix/src/code/codeUtils');
 
 let currentStepIndex = -1;
 let web3Providers = new Web3Providers();
@@ -27,11 +28,9 @@ let sourceMappingDecoder = new SourceMappingDecoder();
 // get .sol file
 const inputFile = process.argv[2];
 const inputContents = fs.readFileSync(inputFile).toString();
-const compilationResult = solc.compile(inputContents, 0);
-const lineBreakPositions = sourceMappingDecoder.getLinebreakPositions(inputContents);
-const sourceMap = compilationResult.contracts[":DebugContract"].srcmapRuntime;
+const compilationResult = solc.compile(inputContents, 1);
 
-let monitoredAddresses = [];
+let monitoredContracts = {};
 
 codeManager.event.register('changed', this, (code, address, instIndex) => {
   console.log("codeManager.changed(" + code + ", " + address + ", " + instIndex + ")");
@@ -66,27 +65,15 @@ client.on("data", (data) => {
   data = CircularJSON.parse(data);
   const triggerType = data.triggerType;
 
-  if (triggerType == "step") {
-    // step through code
-    const pc = data.content.pc;
-    const address = data.content.address;
+  if (triggerType == "monitoredContractsChanged") {
+    // addresses changed
+    monitoredContracts = data.content;
     
-    /*if (monitoredAddresses.indexOf(address) < 0) {
-      const response = {
-        "status": "error",
-        "id": data.id,
-        "messageType": "response",
-        "content": "address not monitored"
-      };
-      client.write(CircularJSON.stringify(response));
-      return;
-    }*/
-
-    // get line number from pc
-    console.log(pc);
-    const sourceLocation = sourceMappingDecoder.atIndex(pc, sourceMap);
-    const currentLocation = sourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, lineBreakPositions);
-
+    Object.keys(monitoredContracts).forEach((key) => {
+      monitoredContracts[key].pcMap = CodeUtils.nameOpCodes(new Buffer(monitoredContracts[key].bytecode.substring(2), 'hex'))[1];
+      monitoredContracts[key].lineBreaks = sourceMappingDecoder.getLinebreakPositions(inputContents);
+    });
+    
     const response = {
       "status": "ok",
       "id": data.id,
@@ -95,10 +82,34 @@ client.on("data", (data) => {
     };
     client.write(CircularJSON.stringify(response));
   }
-  else if (triggerType == "monitoredAddressesChanged") {
-    // addresses changed
-    monitoredAddresses = data.content;
+  else if (triggerType == "step") {
+    // step through code
+    const pc = data.content.pc;
+    const address = (new Buffer(data.content.address.data)).toString("hex");
     
+    if (!(address in monitoredContracts)) {
+      console.log("address " + address + " not monitored");
+      const response = {
+        "status": "error",
+        "id": data.id,
+        "messageType": "response",
+        "content": "address not monitored"
+      };
+      client.write(CircularJSON.stringify(response));
+      return;
+    }
+
+    // get line number from pc
+    const index = monitoredContracts[address].pcMap[pc];
+    const sourceLocation = sourceMappingDecoder.atIndex(index, monitoredContracts[address].sourceMap);
+    const currentLocation = sourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, monitoredContracts[address].lineBreaks);
+
+    //console.log(pc + " : " + codePCMap[pc] + " : " + codePCMap[pc + 1]);
+    if(currentLocation.start && currentLocation.end) {
+      console.log("Start: (" + currentLocation.start.line + " : " + currentLocation.start.column + ")");
+      console.log("End: (" + currentLocation.end.line + " : " + currentLocation.end.column + ")");
+    }
+
     const response = {
       "status": "ok",
       "id": data.id,
