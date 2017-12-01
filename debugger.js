@@ -13,7 +13,6 @@ let sourceMappingDecoder = new SourceMappingDecoder();
 // get .sol file
 const inputFile = process.argv[2];
 const inputContents = fs.readFileSync(inputFile).toString();
-const compilationResult = solc.compile(inputContents, 1);
 
 let monitoredContracts = {};
 
