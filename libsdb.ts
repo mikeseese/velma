@@ -1,9 +1,13 @@
-/*---------------------------------------------------------
- * Copyright (C) Microsoft Corporation. All rights reserved.
- *--------------------------------------------------------*/
+import { readFileSync } from "fs";
+import { EventEmitter } from "events";
+import { Socket } from "net";
+import { util, code } from "../remix/src/index"
 
-import { readFileSync } from 'fs';
-import { EventEmitter } from 'events';
+const uuidv4 = require("uuid/v4");
+const CircularJSON = require("circular-json");
+const remix = require("../remix/src/index");
+const sourceMappingDecoder = new util.SourceMappingDecoder();
+const CodeUtils = code.codeUtils;
 
 export interface SdbBreakpoint {
   id: number;
@@ -11,10 +15,7 @@ export interface SdbBreakpoint {
   verified: boolean;
 }
 
-/**
- * A Mock runtime with minimal debugger functionality.
- */
-export class SdbRuntimeAdapter extends EventEmitter {
+export class LibSdb extends EventEmitter {
 
   // the initial (and one and only) file we are 'debugging'
   private _sourceFile: string;
@@ -35,9 +36,86 @@ export class SdbRuntimeAdapter extends EventEmitter {
   // so that the frontend can match events with breakpoints.
   private _breakpointId = 1;
 
+  private _socket: Socket;
+
+  private _contracts: any[];
 
   constructor() {
     super();
+  }
+
+  private contractsChanged(data: any) {
+    // addresses changed
+    this._contracts = data.content;
+    
+    Object.keys(this._contracts).forEach((key) => {
+      this._contracts[key].pcMap = CodeUtils.nameOpCodes(new Buffer(this._contracts[key].bytecode.substring(2), 'hex'))[1];
+      this._contracts[key].lineBreaks = sourceMappingDecoder.getLinebreakPositions(inputContents);
+    });
+    
+    const response = {
+      "status": "ok",
+      "id": data.id,
+      "messageType": "response",
+      "content": null
+    };
+    this._socket.write(CircularJSON.stringify(response));
+  }
+
+  private socketHandler(dataSerialized: string) {
+    const data = CircularJSON.parse(dataSerialized);
+    const triggerType = data.triggerType;
+  
+    if (triggerType === "monitoredContractsChanged") {
+      this.contractsChanged(data);
+    }
+    else if (triggerType === "step") {
+      // step through code
+      const pc = data.content.pc;
+      const address = (new Buffer(data.content.address.data)).toString("hex");
+      
+      if (!(address in this._contracts)) {
+        console.log("address " + address + " not monitored");
+        const response = {
+          "status": "error",
+          "id": data.id,
+          "messageType": "response",
+          "content": "address not monitored"
+        };
+        this._socket.write(CircularJSON.stringify(response));
+        return;
+      }
+  
+      // get line number from pc
+      const index = this._contracts[address].pcMap[pc];
+      const sourceLocation = sourceMappingDecoder.atIndex(index, this._contracts[address].sourceMap);
+      const currentLocation = sourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, this._contracts[address].lineBreaks);
+  
+      //console.log(pc + " : " + codePCMap[pc] + " : " + codePCMap[pc + 1]);
+      if(currentLocation.start && currentLocation.end) {
+        console.log("Start: (" + currentLocation.start.line + " : " + currentLocation.start.column + ")");
+        console.log("End: (" + currentLocation.end.line + " : " + currentLocation.end.column + ")");
+      }
+  
+      const response = {
+        "status": "ok",
+        "id": data.id,
+        "messageType": "response",
+        "content": null
+      };
+      this._socket.write(CircularJSON.stringify(response));
+    }
+  }
+
+  /**
+   * Attach to SDB hook which interfaces to the EVM
+   */
+  public attach(host: string, port: number) {
+    this._socket.connect(port, host, () => {
+      console.log("connected");
+    });
+
+    this._socket.on("data", this.socketHandler);
   }
 
   /**
