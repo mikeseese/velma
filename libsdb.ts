@@ -99,9 +99,9 @@ export class LibSdb extends EventEmitter {
   /**
    * Attach to SDB hook which interfaces to the EVM
    */
-  public attach(host: string, port: number) {
+  public attach(host: string, port: number, callback) {
     this._socket.connect(port, host, () => {
-      console.log("connected");
+      callback();
     });
 
     this._socket.on("data", this.socketHandler);
