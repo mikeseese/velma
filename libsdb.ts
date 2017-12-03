@@ -17,15 +17,6 @@ export interface SdbBreakpoint {
 
 export class LibSdb extends EventEmitter {
 
-  // the initial (and one and only) file we are 'debugging'
-  private _sourceFile: string;
-  public get sourceFile() {
-    return this._sourceFile;
-  }
-
-  // the contents (= lines) of the one and only file
-  private _sourceLines: string[];
-
   // This is the next line that will be 'executed'
   private _currentLine = 0;
 
@@ -40,8 +31,11 @@ export class LibSdb extends EventEmitter {
 
   private _contracts: any[];
 
+  private _stepData: any;
+
   constructor() {
     super();
+    this._stepData = null;
   }
 
   private contractsChanged(data: any) {
@@ -50,6 +44,7 @@ export class LibSdb extends EventEmitter {
     
     Object.keys(this._contracts).forEach((key) => {
       this._contracts[key].pcMap = CodeUtils.nameOpCodes(new Buffer(this._contracts[key].bytecode.substring(2), 'hex'))[1];
+      const inputContents = readFileSync(this._contracts[key].path).toString();
       this._contracts[key].lineBreaks = sourceMappingDecoder.getLinebreakPositions(inputContents);
     });
     
@@ -62,6 +57,38 @@ export class LibSdb extends EventEmitter {
     this._socket.write(CircularJSON.stringify(response));
   }
 
+  private vmStepped(data: any) {
+    // step through code
+    const pc = data.content.pc;
+    const address = (new Buffer(data.content.address.data)).toString("hex");
+    
+    if (!(address in this._contracts)) {
+      console.log("address " + address + " not monitored");
+      const response = {
+        "status": "error",
+        "id": data.id,
+        "messageType": "response",
+        "content": "address not monitored"
+      };
+      this._socket.write(CircularJSON.stringify(response));
+      return;
+    }
+
+    // get line number from pc
+    const index = this._contracts[address].pcMap[pc];
+    const sourceLocation = sourceMappingDecoder.atIndex(index, this._contracts[address].sourceMap);
+    const currentLocation = sourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, this._contracts[address].lineBreaks);
+
+    this._stepData = {
+      "debuggerMessageId": data.id,
+      "location": currentLocation,
+      "contractAddress": address,
+      "vmData": data.content
+    };
+
+    this.sendEvent("step");
+  }
+
   private socketHandler(dataSerialized: string) {
     const data = CircularJSON.parse(dataSerialized);
     const triggerType = data.triggerType;
@@ -70,40 +97,7 @@ export class LibSdb extends EventEmitter {
       this.contractsChanged(data);
     }
     else if (triggerType === "step") {
-      // step through code
-      const pc = data.content.pc;
-      const address = (new Buffer(data.content.address.data)).toString("hex");
-      
-      if (!(address in this._contracts)) {
-        console.log("address " + address + " not monitored");
-        const response = {
-          "status": "error",
-          "id": data.id,
-          "messageType": "response",
-          "content": "address not monitored"
-        };
-        this._socket.write(CircularJSON.stringify(response));
-        return;
-      }
-  
-      // get line number from pc
-      const index = this._contracts[address].pcMap[pc];
-      const sourceLocation = sourceMappingDecoder.atIndex(index, this._contracts[address].sourceMap);
-      const currentLocation = sourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, this._contracts[address].lineBreaks);
-  
-      //console.log(pc + " : " + codePCMap[pc] + " : " + codePCMap[pc + 1]);
-      if(currentLocation.start && currentLocation.end) {
-        console.log("Start: (" + currentLocation.start.line + " : " + currentLocation.start.column + ")");
-        console.log("End: (" + currentLocation.end.line + " : " + currentLocation.end.column + ")");
-      }
-  
-      const response = {
-        "status": "ok",
-        "id": data.id,
-        "messageType": "response",
-        "content": null
-      };
-      this._socket.write(CircularJSON.stringify(response));
+      this.vmStepped(data);
     }
   }
 
@@ -121,12 +115,11 @@ export class LibSdb extends EventEmitter {
   /**
    * Start executing the given program.
    */
-  public start(program: string, stopOnEntry: boolean) {
+  public start(stopOnEntry: boolean) {
 
-    this.loadSource(program);
     this._currentLine = -1;
 
-    this.verifyBreakpoints(this._sourceFile);
+    this.verifyAllBreakpoints();
 
     if (stopOnEntry) {
       // we step once
@@ -147,7 +140,19 @@ export class LibSdb extends EventEmitter {
   /**
    * Step to the next/previous non empty line.
    */
+  public stepOver(reverse = false, event = 'stopOnStepOver') {
+    this.run(reverse, event);
+  }
+
+  public stepIn(reverse = false, event = 'stopOnStepIn') {
+    this.run(reverse, event);
+  }
+  
   public step(reverse = false, event = 'stopOnStep') {
+    this.run(reverse, event);
+  }
+  
+  public stepOut(reverse = false, event = 'stopOnStepOut') {
     this.run(reverse, event);
   }
 
@@ -156,7 +161,9 @@ export class LibSdb extends EventEmitter {
    */
   public stack(startFrame: number, endFrame: number): any {
 
-    const words = this._sourceLines[this._currentLine].trim().split(/\s+/);
+    // TODO: implement stack
+
+    /*const words = this._sourceLines[this._currentLine].trim().split(/\s+/);
 
     const frames = new Array<any>();
     // every word of the current line becomes a stack frame.
@@ -172,7 +179,7 @@ export class LibSdb extends EventEmitter {
     return {
       frames: frames,
       count: words.length
-    };
+    };*/
   }
 
   /*
@@ -218,20 +225,19 @@ export class LibSdb extends EventEmitter {
 
   // private methods
 
-  private loadSource(file: string) {
-    if (this._sourceFile !== file) {
-      this._sourceFile = file;
-      this._sourceLines = readFileSync(this._sourceFile).toString().split('\n');
-    }
-  }
-
   /**
    * Run through the file.
    * If stepEvent is specified only run a single step and emit the stepEvent.
    */
   private run(reverse = false, stepEvent?: string) {
+    // We should be stopped currently, which is why we're calling this function
+    // so we should continue on now
+    this.respondToDebugHook();
+
     if (reverse) {
-      for (let ln = this._currentLine-1; ln >= 0; ln--) {
+      // TODO: implement reverse running
+
+      /*for (let ln = this._currentLine-1; ln >= 0; ln--) {
         if (this.fireEventsForLine(ln, stepEvent)) {
           this._currentLine = ln;
           return;
@@ -239,25 +245,59 @@ export class LibSdb extends EventEmitter {
       }
       // no more lines: stop at first line
       this._currentLine = 0;
-      this.sendEvent('stopOnEntry');
+      this.sendEvent('stopOnEntry');*/
     } else {
-      for (let ln = this._currentLine+1; ln < this._sourceLines.length; ln++) {
-        if (this.fireEventsForLine(ln, stepEvent)) {
-          this._currentLine = ln;
-          return true;
+      this.on("step", function handler() {
+        const stepResult = this.fireEventsForStep(stepEvent);
+        if (stepResult === "end") { // TODO: better check
+          // we've finished the evm
+          this.removeListener("step", handler);
+          this.sendEvent("end");
         }
-      }
-      // no more lines: run to end
-      this.sendEvent('end');
+        else if (stepResult === "stop") {
+          // we've stopped for some reason. let's not continue
+          this.removeListener("step", handler);
+        }
+        else {
+          // this is not the step we're looking for; move along
+          this.respondToDebugHook();
+        }
+      });
     }
+  }
+
+  private respondToDebugHook(content = null) {
+    // don't respond if we don't actually need to
+    if (this._stepData === null) {
+      return;
+    }
+
+    const response = {
+      "status": "ok",
+      "id": this._stepData.debuggerMessageId,
+      "messageType": "response",
+      "content": content
+    };
+    this._socket.write(CircularJSON.stringify(response));
+    this._stepData = null;
+  }
+  
+  private verifyAllBreakpoints() : void {
+    this._breakPoints.forEach((bps, path) => {
+      this.verifyBreakpoints(path);
+    })
   }
 
   private verifyBreakpoints(path: string) : void {
     let bps = this._breakPoints.get(path);
     if (bps) {
-      this.loadSource(path);
       bps.forEach(bp => {
-        if (!bp.verified && bp.line < this._sourceLines.length) {
+        // Temporarily validate each breakpoint
+        bp.verified = true;
+        this.sendEvent('breakpointValidated', bp);
+
+        // TODO: real breakpoint verification
+        /*if (!bp.verified && bp.line < this._sourceLines.length) {
           const srcLine = this._sourceLines[bp.line].trim();
 
           // if a line is empty or starts with '+' we don't allow to set a breakpoint but move the breakpoint down
@@ -274,7 +314,7 @@ export class LibSdb extends EventEmitter {
             bp.verified = true;
             this.sendEvent('breakpointValidated', bp);
           }
-        }
+        }*/
       });
     }
   }
@@ -283,24 +323,23 @@ export class LibSdb extends EventEmitter {
    * Fire events if line has a breakpoint or the word 'exception' is found.
    * Returns true is execution needs to stop.
    */
-  private fireEventsForLine(ln: number, stepEvent?: string): boolean {
+  private fireEventsForStep(stepEvent?: string): boolean {
 
-    const line = this._sourceLines[ln].trim();
+    const ln = this._stepData.location.start.line;
 
-    // if 'log(...)' found in source -> send argument to debug console
-    const matches = /log\((.*)\)/.exec(line);
-    if (matches && matches.length === 2) {
-      this.sendEvent('output', matches[1], this._sourceFile, ln, matches.index)
-    }
+    // TODO: do we need to do an output event send?
+    // this.sendEvent('output', matches[1], this._sourceFile, ln, matches.index)
 
-    // if word 'exception' found in source -> throw exception
-    if (line.indexOf('exception') >= 0) {
+    // TODO: figure out if an exception happened? do exceptions happen in the VM?
+    /*if (line.indexOf('exception') >= 0) {
       this.sendEvent('stopOnException');
       return true;
-    }
+    }*/
+
+    // TODO: Stop on out of gas. I'd call that an exception
 
     // is there a breakpoint?
-    const breakpoints = this._breakPoints.get(this._sourceFile);
+    const breakpoints = this._breakPoints.get(this._contracts[this._stepData.contractAddress]);
     if (breakpoints) {
       const bps = breakpoints.filter(bp => bp.line === ln);
       if (bps.length > 0) {
@@ -318,11 +357,7 @@ export class LibSdb extends EventEmitter {
       }
     }
 
-    // non-empty line
-    if (stepEvent && line.length > 0) {
-      this.sendEvent(stepEvent);
-      return true;
-    }
+    // TODO: step in/step over/step out
 
     // nothing interesting found -> continue
     return false;
