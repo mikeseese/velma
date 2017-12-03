@@ -3,9 +3,7 @@ import { EventEmitter } from "events";
 import { Socket } from "net";
 import { util, code } from "../remix/src/index"
 
-const uuidv4 = require("uuid/v4");
 const CircularJSON = require("circular-json");
-const remix = require("../remix/src/index");
 const sourceMappingDecoder = new util.SourceMappingDecoder();
 const CodeUtils = code.codeUtils;
 
@@ -16,9 +14,6 @@ export interface SdbBreakpoint {
 }
 
 export class LibSdb extends EventEmitter {
-
-  // This is the next line that will be 'executed'
-  private _currentLine = 0;
 
   // maps from sourceFile to array of Mock breakpoints
   private _breakPoints = new Map<string, SdbBreakpoint[]>();
@@ -116,8 +111,6 @@ export class LibSdb extends EventEmitter {
    * Start executing the given program.
    */
   public start(stopOnEntry: boolean) {
-
-    this._currentLine = -1;
 
     this.verifyAllBreakpoints();
 
@@ -229,7 +222,7 @@ export class LibSdb extends EventEmitter {
    * Run through the file.
    * If stepEvent is specified only run a single step and emit the stepEvent.
    */
-  private run(reverse = false, stepEvent?: string) {
+  private run(reverse = false, stepEvent?: string) : void {
     // We should be stopped currently, which is why we're calling this function
     // so we should continue on now
     this.respondToDebugHook();
@@ -247,16 +240,16 @@ export class LibSdb extends EventEmitter {
       this._currentLine = 0;
       this.sendEvent('stopOnEntry');*/
     } else {
-      this.on("step", function handler() {
-        const stepResult = this.fireEventsForStep(stepEvent);
-        if (stepResult === "end") { // TODO: better check
-          // we've finished the evm
-          this.removeListener("step", handler);
-          this.sendEvent("end");
-        }
-        else if (stepResult === "stop") {
+      this.on("step", function handler(this: LibSdb) {
+        if (this.fireEventsForStep(stepEvent)) {
           // we've stopped for some reason. let's not continue
           this.removeListener("step", handler);
+
+          // TODO: handle end of evm?
+          /*if (this.) {
+            // we've finished the evm
+            this.sendEvent("end");
+          }*/
         }
         else {
           // this is not the step we're looking for; move along
