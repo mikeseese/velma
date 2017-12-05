@@ -161,23 +161,17 @@ export class LibSdb extends EventEmitter {
 
     // TODO: implement stack
 
-    /*const words = this._sourceLines[this._currentLine].trim().split(/\s+/);
-
     const frames = new Array<any>();
-    // every word of the current line becomes a stack frame.
-    for (let i = startFrame; i < Math.min(endFrame, words.length); i++) {
-      const name = words[i];	// use a word of the line as the stackframe name
-      frames.push({
-        index: i,
-        name: `${name}(${i})`,
-        file: this._sourceFile,
-        line: this._currentLine
-      });
-    }
+    frames.push({
+      "index": 0,
+      "name": "meh",
+      "file": this._contracts[this._stepData.contractAddress].sourcePath,
+      "line": this._stepData.location.start.line
+    });
     return {
       frames: frames,
-      count: words.length
-    };*/
+      count: 1
+    };
   }
 
   /*
