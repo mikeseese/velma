@@ -1,11 +1,11 @@
 import { readFileSync } from "fs";
 import { EventEmitter } from "events";
 import { Socket } from "net";
-import { util, code } from "../remix/src/index"
+import { util, code } from "/home/mike/projects/remix/src/index"
 
 const CircularJSON = require("circular-json");
 const sourceMappingDecoder = new util.SourceMappingDecoder();
-const CodeUtils = code.codeUtils;
+const CodeUtils = code.util;
 
 export interface SdbBreakpoint {
   id: number;
@@ -16,11 +16,11 @@ export interface SdbBreakpoint {
 export class LibSdb extends EventEmitter {
 
   // maps from sourceFile to array of Mock breakpoints
-  private _breakPoints = new Map<string, SdbBreakpoint[]>();
+  private _breakPoints: Map<string, SdbBreakpoint[]>;
 
   // since we want to send breakpoint events, we will assign an id to every event
   // so that the frontend can match events with breakpoints.
-  private _breakpointId = 1;
+  private _breakpointId: number;
 
   private _socket: Socket;
 
@@ -31,6 +31,9 @@ export class LibSdb extends EventEmitter {
   constructor() {
     super();
     this._stepData = null;
+    this._socket = new Socket();
+    this._breakPoints = new Map<string, SdbBreakpoint[]>();
+    this._breakpointId = 1;
   }
 
   private contractsChanged(data: any) {
@@ -38,9 +41,11 @@ export class LibSdb extends EventEmitter {
     this._contracts = data.content;
     
     Object.keys(this._contracts).forEach((key) => {
-      this._contracts[key].pcMap = CodeUtils.nameOpCodes(new Buffer(this._contracts[key].bytecode.substring(2), 'hex'))[1];
-      const inputContents = readFileSync(this._contracts[key].path).toString();
-      this._contracts[key].lineBreaks = sourceMappingDecoder.getLinebreakPositions(inputContents);
+      if(this._contracts[key].sourcePath !== null) {
+        this._contracts[key].pcMap = CodeUtils.nameOpCodes(new Buffer(this._contracts[key].bytecode.substring(2), 'hex'))[1];
+        const inputContents = readFileSync(this._contracts[key].sourcePath).toString();
+        this._contracts[key].lineBreaks = sourceMappingDecoder.getLinebreakPositions(inputContents);
+      }
     });
     
     const response = {
@@ -104,7 +109,7 @@ export class LibSdb extends EventEmitter {
       callback();
     });
 
-    this._socket.on("data", this.socketHandler);
+    this._socket.on("data", this.socketHandler.bind(this));
   }
 
   /**
@@ -317,8 +322,12 @@ export class LibSdb extends EventEmitter {
    * Returns true is execution needs to stop.
    */
   private fireEventsForStep(stepEvent?: string): boolean {
+    if(this._stepData.location.start === null) {
+      return false;
+    }
 
     const ln = this._stepData.location.start.line;
+    console.log(ln);
 
     // TODO: do we need to do an output event send?
     // this.sendEvent('output', matches[1], this._sourceFile, ln, matches.index)
@@ -332,7 +341,7 @@ export class LibSdb extends EventEmitter {
     // TODO: Stop on out of gas. I'd call that an exception
 
     // is there a breakpoint?
-    const breakpoints = this._breakPoints.get(this._contracts[this._stepData.contractAddress]);
+    const breakpoints = this._breakPoints.get(this._contracts[this._stepData.contractAddress].sourcePath);
     if (breakpoints) {
       const bps = breakpoints.filter(bp => bp.line === ln);
       if (bps.length > 0) {
