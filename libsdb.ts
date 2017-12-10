@@ -1,16 +1,34 @@
 import { readFileSync } from "fs";
 import { EventEmitter } from "events";
 import { Socket } from "net";
-import { util, code } from "/home/mike/projects/remix/src/index"
+import { util, code/*, trace, solidity*/ } from "/home/mike/projects/remix/src/index";
+//import { StackFrame } from "../vscode-sdb-debug/node_modules/vscode-debugadapter/lib/main";
 
 const CircularJSON = require("circular-json");
 const sourceMappingDecoder = new util.SourceMappingDecoder();
-const CodeUtils = code.util;
+
+// bytecode is a hex string of the bytecode without the preceding '0x'
+// methodId is the SHA3 hash of the ABI for this function
+// returns the first occurence of the following bytecode sequence:
+// DUP1, PUSH4 methodId, EQ, PUSH1 pc
+export function GetFunctionProgramCount(bytecode, methodId) {
+  const bytecodeSequence = "63" + methodId + "1460";
+  const pos = bytecode.indexOf(bytecodeSequence);
+  const pc = bytecode[pos + bytecodeSequence.length] + bytecode[pos + bytecodeSequence.length + 1];
+  return parseInt(pc, 16);
+}
 
 export interface SdbBreakpoint {
   id: number;
   line: number;
   verified: boolean;
+}
+
+export interface SdbStackFrame {
+  name: string;
+  file: string;
+  line: number;
+  pc: number;
 }
 
 export class LibSdb extends EventEmitter {
@@ -24,9 +42,18 @@ export class LibSdb extends EventEmitter {
 
   private _socket: Socket;
 
-  private _contracts: any[];
+  private _compilationResult: any;
 
   private _stepData: any;
+
+  private _callStack: SdbStackFrame[];
+
+  private _priorStep: any | null;
+  
+  // private _traceManager: trace.traceManager;
+  // private _codeManager: code.codeManager;
+  // private _solidityProxy: solidity.proxy;
+  // private _internalCallTree: util.internalCallTree;
 
   constructor() {
     super();
@@ -34,17 +61,34 @@ export class LibSdb extends EventEmitter {
     this._socket = new Socket();
     this._breakPoints = new Map<string, SdbBreakpoint[]>();
     this._breakpointId = 1;
+    this._priorStep = null;
+    this._callStack = [];
+
+    // this._traceManager = new trace.traceManager();
+    // this._codeManager = new code.codeManager(this._traceManager);
+    // this._solidityProxy = new solidity.proxy(this._traceManager, this._codeManager);
+    // this._internalCallTree = new util.internalCallTree(this, this._traceManager, this._solidityProxy, this._codeManager, { includeLocalVariables: true });
   }
 
   private contractsChanged(data: any) {
     // addresses changed
-    this._contracts = data.content;
+    this._compilationResult = data.content;
+    //this._solidityProxy.reset(this._compilationResult);
+    this.sendEvent("solidityProxyLoaded");
     
-    Object.keys(this._contracts).forEach((key) => {
-      if(this._contracts[key].sourcePath !== null) {
-        this._contracts[key].pcMap = CodeUtils.nameOpCodes(new Buffer(this._contracts[key].bytecode.substring(2), 'hex'))[1];
-        const inputContents = readFileSync(this._contracts[key].sourcePath).toString();
-        this._contracts[key].lineBreaks = sourceMappingDecoder.getLinebreakPositions(inputContents);
+    let contracts = this._compilationResult.contracts;
+    Object.keys(contracts).forEach((key) => {
+      if(contracts[key].sourcePath !== null) {
+        contracts[key].pcMap = code.util.nameOpCodes(new Buffer(contracts[key].runtimeBytecode.substring(2), 'hex'))[1];
+
+        const inputContents = readFileSync(contracts[key].sourcePath).toString();
+        contracts[key].lineBreaks = sourceMappingDecoder.getLinebreakPositions(inputContents);
+
+        contracts[key].functionNames = {};
+        Object.keys(contracts[key].functionHashes).forEach((functionName) => {
+          const pc = GetFunctionProgramCount(contracts[key].bytecode, contracts[key].functionHashes[functionName]);
+          contracts[key].functionNames[pc] = functionName;
+        })
       }
     });
     
@@ -59,10 +103,10 @@ export class LibSdb extends EventEmitter {
 
   private vmStepped(data: any) {
     // step through code
-    const pc = data.content.pc;
+    const pc = data.content.pc - 1;
     const address = (new Buffer(data.content.address.data)).toString("hex");
     
-    if (!(address in this._contracts)) {
+    /*if (!(address in this._contracts)) {
       console.log("address " + address + " not monitored");
       const response = {
         "status": "error",
@@ -72,21 +116,74 @@ export class LibSdb extends EventEmitter {
       };
       this._socket.write(CircularJSON.stringify(response));
       return;
+    }*/
+
+    if(typeof this._compilationResult === "undefined" || typeof this._compilationResult.contracts === "undefined") {
+      this._stepData = {
+        "debuggerMessageId": data.id,
+        "location": null,
+        "contractAddress": address,
+        "vmData": data.content
+      };
+      this.respondToDebugHook();
     }
+    else {
+      const contract = this._compilationResult.contracts[this._compilationResult.contractMap[address]];
 
-    // get line number from pc
-    const index = this._contracts[address].pcMap[pc];
-    const sourceLocation = sourceMappingDecoder.atIndex(index, this._contracts[address].sourceMap);
-    const currentLocation = sourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, this._contracts[address].lineBreaks);
+      // get line number from pc
+      const index = contract.pcMap[pc];
+      const sourceLocation = sourceMappingDecoder.atIndex(index, contract.srcmapRuntime);
+      const currentLocation = sourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, contract.lineBreaks);
 
-    this._stepData = {
-      "debuggerMessageId": data.id,
-      "location": currentLocation,
-      "contractAddress": address,
-      "vmData": data.content
-    };
+      if (this._priorStep) {
+        if (this._priorStep.sourceLocation.jump === "i") {
+          // jump in
 
-    this.sendEvent("step");
+          // push the prior function onto the stack. the current location for stack goes on when requested
+          const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStep.sourceLocation, this._compilationResult.sources["DebugContract.sol"]);
+          const functionName = node.attributes.name;
+          const frame = <SdbStackFrame> {
+            name: functionName,
+            file: contract.sourcePath,
+            line: this._priorStep.currentLocation.start === null ? null : this._priorStep.currentLocation.start.line,
+            pc: pc
+          };
+          this._callStack.unshift(frame);
+        }
+        else if (this._priorStep.sourceLocation.jump === "o") {
+          // jump out
+          this._callStack.shift();
+        }
+        else if (pc in contract.functionNames) {
+          // jump in to external function
+          // this is the JUMPDEST of a function we just entered
+
+          // TODO: figure this out
+          const functionName = contract.functionNames[pc];
+          const frame = <SdbStackFrame> {
+            name: "external place?",
+            file: contract.sourcePath,
+            line: 0, //currentLocation.start === null ? null : currentLocation.start.line,
+            pc: pc
+          };
+          this._callStack.unshift(frame);
+        }
+      }
+      
+      this._priorStep = {
+        sourceLocation: sourceLocation,
+        currentLocation: currentLocation,
+      }
+
+      this._stepData = {
+        "debuggerMessageId": data.id,
+        "location": currentLocation,
+        "contractAddress": address,
+        "vmData": data.content
+      };
+
+      this.sendEvent("step");
+    }
   }
 
   private socketHandler(dataSerialized: string) {
@@ -105,6 +202,21 @@ export class LibSdb extends EventEmitter {
    * Attach to SDB hook which interfaces to the EVM
    */
   public attach(host: string, port: number, callback) {
+    this._socket.on('error', function(e) {
+      if(e.code === 'ECONNREFUSED') {
+        console.log('Is the server running at ' + port + '?');
+
+        this._socket.setTimeout(5000, function() {
+          this._socket.connect(port, host, function(){
+            callback();
+          });
+        }.bind(this));
+
+        console.log('Timeout for 5 seconds before trying port:' + port + ' again');
+
+      }
+    }.bind(this));
+
     this._socket.connect(port, host, () => {
       callback();
     });
@@ -158,19 +270,31 @@ export class LibSdb extends EventEmitter {
    * Returns a fake 'stacktrace' where every 'stackframe' is a word from the current line.
    */
   public stack(startFrame: number, endFrame: number): any {
-
-    // TODO: implement stack
-
     const frames = new Array<any>();
-    frames.push({
-      "index": 0,
-      "name": "meh",
-      "file": this._contracts[this._stepData.contractAddress].sourcePath,
-      "line": this._stepData.location.start.line
-    });
+
+    const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStep.sourceLocation, this._compilationResult.sources["DebugContract.sol"]);
+    const functionName = node.attributes.name;
+    if (startFrame === 0 && this._priorStep.currentLocation && this._priorStep.currentLocation.start) {
+      frames.push({
+        "index": startFrame,
+        "name": functionName,
+        "file": this._compilationResult.contracts["DebugContract.sol:DebugContract"].sourcePath,
+        "line": this._priorStep.currentLocation.start.line
+      });
+    }
+
+    for (let i = startFrame; i < Math.min(endFrame, this._callStack.length); i++) {
+      frames.push({
+        "index": i + 1, // offset by one due to the current line "at the top of the stack", but not in the callstack variable
+        "name": this._callStack[i].name,
+        "file": this._callStack[i].file,
+        "line": this._callStack[i].line
+      });
+    }
+
     return {
       frames: frames,
-      count: 1
+      count: frames.length
     };
   }
 
@@ -316,7 +440,7 @@ export class LibSdb extends EventEmitter {
    * Returns true is execution needs to stop.
    */
   private fireEventsForStep(stepEvent?: string): boolean {
-    if(this._stepData.location.start === null) {
+    if(this._stepData === null || this._stepData.location === null || this._stepData.location.start === null) {
       return false;
     }
 
@@ -335,7 +459,7 @@ export class LibSdb extends EventEmitter {
     // TODO: Stop on out of gas. I'd call that an exception
 
     // is there a breakpoint?
-    const breakpoints = this._breakPoints.get(this._contracts[this._stepData.contractAddress].sourcePath);
+    const breakpoints = this._breakPoints.get(this._compilationResult.contracts[this._compilationResult.contractMap[this._stepData.contractAddress]].sourcePath);
     if (breakpoints) {
       const bps = breakpoints.filter(bp => bp.line === ln);
       if (bps.length > 0) {
