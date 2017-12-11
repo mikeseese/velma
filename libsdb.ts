@@ -48,7 +48,10 @@ export class LibSdb extends EventEmitter {
 
   private _callStack: SdbStackFrame[];
 
-  private _priorStep: any | null;
+  private _priorStepData: any | null;
+  private _priorUiStepData: any | null;
+  
+  private _priorUiCallStack: SdbStackFrame[] | null;
   
   // private _traceManager: trace.traceManager;
   // private _codeManager: code.codeManager;
@@ -61,8 +64,10 @@ export class LibSdb extends EventEmitter {
     this._socket = new Socket();
     this._breakPoints = new Map<string, SdbBreakpoint[]>();
     this._breakpointId = 1;
-    this._priorStep = null;
+    this._priorStepData = null;
     this._callStack = [];
+    this._priorUiCallStack = [];
+    this._priorUiStepData = null;
 
     // this._traceManager = new trace.traceManager();
     // this._codeManager = new code.codeManager(this._traceManager);
@@ -121,6 +126,7 @@ export class LibSdb extends EventEmitter {
     if(typeof this._compilationResult === "undefined" || typeof this._compilationResult.contracts === "undefined") {
       this._stepData = {
         "debuggerMessageId": data.id,
+        "source": null,
         "location": null,
         "contractAddress": address,
         "vmData": data.content
@@ -135,22 +141,22 @@ export class LibSdb extends EventEmitter {
       const sourceLocation = sourceMappingDecoder.atIndex(index, contract.srcmapRuntime);
       const currentLocation = sourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, contract.lineBreaks);
 
-      if (this._priorStep) {
-        if (this._priorStep.sourceLocation.jump === "i") {
+      if (this._priorStepData && this._priorStepData.source) {
+        if (this._priorStepData.source.jump === "i") {
           // jump in
 
           // push the prior function onto the stack. the current location for stack goes on when requested
-          const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStep.sourceLocation, this._compilationResult.sources["DebugContract.sol"]);
+          const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, this._compilationResult.sources["DebugContract.sol"]);
           const functionName = node.attributes.name;
           const frame = <SdbStackFrame> {
             name: functionName,
             file: contract.sourcePath,
-            line: this._priorStep.currentLocation.start === null ? null : this._priorStep.currentLocation.start.line,
+            line: this._priorStepData.location.start === null ? null : this._priorStepData.location.start.line,
             pc: pc
           };
           this._callStack.unshift(frame);
         }
-        else if (this._priorStep.sourceLocation.jump === "o") {
+        else if (this._priorStepData.source.jump === "o") {
           // jump out
           this._callStack.shift();
         }
@@ -169,14 +175,10 @@ export class LibSdb extends EventEmitter {
           this._callStack.unshift(frame);
         }
       }
-      
-      this._priorStep = {
-        sourceLocation: sourceLocation,
-        currentLocation: currentLocation,
-      }
 
       this._stepData = {
         "debuggerMessageId": data.id,
+        "source": sourceLocation,
         "location": currentLocation,
         "contractAddress": address,
         "vmData": data.content
@@ -258,10 +260,6 @@ export class LibSdb extends EventEmitter {
     this.run(reverse, event);
   }
   
-  public step(reverse = false, event = 'stopOnStep') {
-    this.run(reverse, event);
-  }
-  
   public stepOut(reverse = false, event = 'stopOnStepOut') {
     this.run(reverse, event);
   }
@@ -272,14 +270,14 @@ export class LibSdb extends EventEmitter {
   public stack(startFrame: number, endFrame: number): any {
     const frames = new Array<any>();
 
-    const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStep.sourceLocation, this._compilationResult.sources["DebugContract.sol"]);
+    const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, this._compilationResult.sources["DebugContract.sol"]);
     const functionName = node.attributes.name;
-    if (startFrame === 0 && this._priorStep.currentLocation && this._priorStep.currentLocation.start) {
+    if (startFrame === 0 && this._stepData.location && this._stepData.location.start) {
       frames.push({
         "index": startFrame,
         "name": functionName,
         "file": this._compilationResult.contracts["DebugContract.sol:DebugContract"].sourcePath,
-        "line": this._priorStep.currentLocation.start.line
+        "line": this._stepData.location.start.line
       });
     }
 
@@ -346,6 +344,9 @@ export class LibSdb extends EventEmitter {
    * If stepEvent is specified only run a single step and emit the stepEvent.
    */
   private run(reverse = false, stepEvent?: string) : void {
+    this._priorUiCallStack = CircularJSON.parse(CircularJSON.stringify(this._callStack)));
+    this._priorUiStepData = CircularJSON.parse(CircularJSON.stringify(this._stepData));
+
     // We should be stopped currently, which is why we're calling this function
     // so we should continue on now
     this.respondToDebugHook();
@@ -387,6 +388,8 @@ export class LibSdb extends EventEmitter {
     if (this._stepData === null) {
       return;
     }
+
+    this._priorStepData = CircularJSON.parse(CircularJSON.stringify(this._stepData));
 
     const response = {
       "status": "ok",
@@ -447,6 +450,34 @@ export class LibSdb extends EventEmitter {
     const ln = this._stepData.location.start.line;
     console.log(ln);
 
+    if (this._priorUiCallStack && this._priorUiStepData) {
+      const callDepthChange = this._callStack.length - this._priorUiCallStack.length;
+      const differentLine = ln !== this._priorUiStepData.location.start.line;
+      switch (stepEvent) {
+        case "stopOnStepOver":
+          if (callDepthChange === 0 && differentLine) {
+            this.sendEvent("stopOnStepOver");
+            return true;
+          }
+          break;
+        case "stopOnStepIn":
+          const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, this._compilationResult.sources["DebugContract.sol"]);
+          if (callDepthChange > 0 && differentLine && node === null) {
+            this.sendEvent("stopOnStepIn");
+            return true;
+          }
+          break;
+        case "stopOnStepOut":
+          if (callDepthChange < 0 && differentLine) {
+            this.sendEvent("stopOnStepOut");
+            return true;
+          }
+          break;
+        default:
+          break;
+      }
+    }
+
     // TODO: do we need to do an output event send?
     // this.sendEvent('output', matches[1], this._sourceFile, ln, matches.index)
 
@@ -461,7 +492,11 @@ export class LibSdb extends EventEmitter {
     // is there a breakpoint?
     const breakpoints = this._breakPoints.get(this._compilationResult.contracts[this._compilationResult.contractMap[this._stepData.contractAddress]].sourcePath);
     if (breakpoints) {
-      const bps = breakpoints.filter(bp => bp.line === ln);
+      let priorLine = null;
+      if (this._priorUiStepData && this._priorUiStepData.location.start) {
+        priorLine = this._priorUiStepData.location.start.line;
+      }
+      const bps = breakpoints.filter(bp => bp.line === ln && (priorLine === null || ln !== priorLine));
       if (bps.length > 0) {
 
         // send 'stopped' event
