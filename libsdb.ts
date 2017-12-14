@@ -1,10 +1,11 @@
 import { readFileSync } from "fs";
 import { EventEmitter } from "events";
 import { Socket } from "net";
-import { util, code/*, trace, solidity*/ } from "/home/mike/projects/remix/src/index";
+import { util, code } from "/home/mike/projects/remix/src/index";
 //import { StackFrame } from "../vscode-sdb-debug/node_modules/vscode-debugadapter/lib/main";
 
 const CircularJSON = require("circular-json");
+const BigNumber = require("bignumber.js");
 const sourceMappingDecoder = new util.SourceMappingDecoder();
 
 // bytecode is a hex string of the bytecode without the preceding '0x'
@@ -31,6 +32,13 @@ export interface SdbStackFrame {
   pc: number;
 }
 
+export interface SdbVariable {
+  name: string;
+  type: string;
+  scope: number;
+  position: number | null;
+}
+
 export class LibSdb extends EventEmitter {
 
   // maps from sourceFile to array of Mock breakpoints
@@ -52,6 +60,8 @@ export class LibSdb extends EventEmitter {
   private _priorUiStepData: any | null;
   
   private _priorUiCallStack: SdbStackFrame[] | null;
+
+  private _variables: Map<number, SdbVariable[]>;
   
   // private _traceManager: trace.traceManager;
   // private _codeManager: code.codeManager;
@@ -68,6 +78,7 @@ export class LibSdb extends EventEmitter {
     this._callStack = [];
     this._priorUiCallStack = [];
     this._priorUiStepData = null;
+    this._variables = new Map<number, SdbVariable[]>();
 
     // this._traceManager = new trace.traceManager();
     // this._codeManager = new code.codeManager(this._traceManager);
@@ -96,6 +107,24 @@ export class LibSdb extends EventEmitter {
         })
       }
     });
+
+    const astWalker = new util.AstWalker();
+    astWalker.walk(this._compilationResult.sources["DebugContract.sol"].AST, (node) => {
+      if (node.id) {
+        this._variables[node.id] = [];
+        if (node.name === "VariableDeclaration") {
+          const variable = <SdbVariable> {
+            name: node.attributes.name,
+            type: node.attributes.type,
+            scope: node.attributes.scope,
+            position: null
+          };
+          this._variables[variable.scope].push(variable);
+        }
+      }
+
+      return true;
+    });
     
     const response = {
       "status": "ok",
@@ -104,6 +133,25 @@ export class LibSdb extends EventEmitter {
       "content": null
     };
     this._socket.write(CircularJSON.stringify(response));
+  }
+
+  private findScope(index: number): number[] {
+    let scope: number[] = [];
+    const ast = this._compilationResult.sources["DebugContract.sol"].AST;
+
+    const astWalker = new util.AstWalker();
+    astWalker.walk(ast, (node) => {
+      const src = node.src.split(":").map((s) => { return parseInt(s); });
+      if (src.length >= 2 && src[0] <= index && index <= src[0] + src[1]) {
+        scope.unshift(node.id);
+        return true;
+      }
+      else {
+        return false;
+      }
+    });
+
+    return scope;
   }
 
   private vmStepped(data: any) {
@@ -165,7 +213,7 @@ export class LibSdb extends EventEmitter {
           // this is the JUMPDEST of a function we just entered
 
           // TODO: figure this out
-          const functionName = contract.functionNames[pc];
+          // const functionName = contract.functionNames[pc];
           const frame = <SdbStackFrame> {
             name: "external place?",
             file: contract.sourcePath,
@@ -176,12 +224,30 @@ export class LibSdb extends EventEmitter {
         }
       }
 
+      // find current scope
+      const currentScope = this.findScope(index);
+
+      // is there a variable declaration here?
+      if (sourceLocation) {
+        const variableDeclarationNode = sourceMappingDecoder.findNodeAtSourceLocation("VariableDeclaration", sourceLocation, this._compilationResult.sources["DebugContract.sol"]);
+        if (variableDeclarationNode) {
+          const scope = variableDeclarationNode.attributes.scope;
+          for (let i = 0; i < this._variables[scope].length; i++) {
+            if (this._variables[scope][i].name === variableDeclarationNode.attributes.name) {
+              this._variables[scope][i].position = data.content.stack.length
+              break;
+            }
+          }
+        }
+      }
+
       this._stepData = {
         "debuggerMessageId": data.id,
         "source": sourceLocation,
         "location": currentLocation,
         "contractAddress": address,
-        "vmData": data.content
+        "vmData": data.content,
+        "scope": currentScope
       };
 
       this.sendEvent("step");
@@ -204,11 +270,11 @@ export class LibSdb extends EventEmitter {
    * Attach to SDB hook which interfaces to the EVM
    */
   public attach(host: string, port: number, callback) {
-    this._socket.on('error', function(e) {
+    this._socket.on('error', function(this: LibSdb, e) {
       if(e.code === 'ECONNREFUSED') {
         console.log('Is the server running at ' + port + '?');
 
-        this._socket.setTimeout(5000, function() {
+        this._socket.setTimeout(5000, function(this: LibSdb) {
           this._socket.connect(port, host, function(){
             callback();
           });
@@ -235,7 +301,7 @@ export class LibSdb extends EventEmitter {
 
     if (stopOnEntry) {
       // we step once
-      this.step(false, 'stopOnEntry');
+      this.run(false, 'stopOnEntry');
     } else {
       // we just start to run until we hit a breakpoint or an exception
       this.continue();
@@ -296,6 +362,30 @@ export class LibSdb extends EventEmitter {
     };
   }
 
+  public variables(): any[] {
+    let variables: any[] = [];
+
+    const stack = this._stepData.vmData.stack;
+    for (let i = 0; i < this._stepData.scope.length; i++) {
+      const scope = this._stepData.scope[i];
+      const scopeVars = this._variables[scope];
+      for (let j = 0; j < scopeVars.length; j++) {
+        if (scopeVars[j].position && stack.length > scopeVars[j].position) {
+          const buf = new Buffer(stack[scopeVars[j].position].data);
+          const num = new BigNumber("0x" + buf.toString("hex"));
+          variables.push({
+            name: scopeVars[j].name,
+            type: scopeVars[j].type,
+            value: num.toString(),
+            variablesReference: 0
+          });
+        }
+      }
+    }
+
+    return variables;
+  }
+
   /*
    * Set breakpoint in file with given line.
    */
@@ -344,7 +434,7 @@ export class LibSdb extends EventEmitter {
    * If stepEvent is specified only run a single step and emit the stepEvent.
    */
   private run(reverse = false, stepEvent?: string) : void {
-    this._priorUiCallStack = CircularJSON.parse(CircularJSON.stringify(this._callStack)));
+    this._priorUiCallStack = CircularJSON.parse(CircularJSON.stringify(this._callStack));
     this._priorUiStepData = CircularJSON.parse(CircularJSON.stringify(this._stepData));
 
     // We should be stopped currently, which is why we're calling this function
