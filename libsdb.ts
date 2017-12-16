@@ -2,16 +2,19 @@ import { readFileSync } from "fs";
 import { EventEmitter } from "events";
 import { Socket } from "net";
 import { util, code } from "/home/mike/projects/remix/src/index";
+import { compile } from "solc";
 //import { StackFrame } from "../vscode-sdb-debug/node_modules/vscode-debugadapter/lib/main";
 
 const CircularJSON = require("circular-json");
 const BigNumber = require("bignumber.js");
+const VM = require("/home/mike/projects/ethereumjs-vm");
 const sourceMappingDecoder = new util.SourceMappingDecoder();
 
 // bytecode is a hex string of the bytecode without the preceding '0x'
 // methodId is the SHA3 hash of the ABI for this function
 // returns the first occurence of the following bytecode sequence:
 // DUP1, PUSH4 methodId, EQ, PUSH1 pc
+// TODO: this could maybe not work depending on the different compiler optimization levels
 export function GetFunctionProgramCount(bytecode, methodId) {
   const bytecodeSequence = "63" + methodId + "1460";
   const pos = bytecode.indexOf(bytecodeSequence);
@@ -602,10 +605,26 @@ export class LibSdb extends EventEmitter {
       }
     }
 
-    // TODO: step in/step over/step out
-
     // nothing interesting found -> continue
     return false;
+  }
+
+  public evaluate(expression: string, context: string | undefined, frameId: number | undefined): string {
+    let value: string = "";
+    const contract = this._compilationResult.contracts[this._compilationResult.contractMap[this._stepData.contractAddress]];
+
+    if (this._stepData !== null && this._stepData.location !== null && this._stepData.location.start !== null) {
+      const currentLine = this._stepData.location.start.line;
+      let sourceCode = readFileSync(contract.sourcePath).toString();
+      if (currentLine > 0) {
+        const insertPosition = contract.lineBreaks[currentLine - 1] + 1;
+        sourceCode = [sourceCode.slice(0, insertPosition), expression + ";\n", sourceCode.slice(insertPosition)].join('');
+        let result = compile(sourceCode, 0);
+        console.log(result);
+      }
+    }
+
+    return value;
   }
 
   private sendEvent(event: string, ... args: any[]) {
