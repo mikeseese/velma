@@ -3,11 +3,12 @@ import { EventEmitter } from "events";
 import { Socket } from "net";
 import { util, code } from "/home/mike/projects/remix/src/index";
 import { compile } from "solc";
-//import { StackFrame } from "../vscode-sdb-debug/node_modules/vscode-debugadapter/lib/main";
+import { v4 as uuidv4 } from "uuid";
 
 const CircularJSON = require("circular-json");
 const BigNumber = require("bignumber.js");
-const VM = require("/home/mike/projects/ethereumjs-vm");
+const parseExpression = require("/home/mike/projects/solidity-parser/index").parse;
+//const VM = require("/home/mike/projects/ethereumjs-vm");
 const sourceMappingDecoder = new util.SourceMappingDecoder();
 
 // bytecode is a hex string of the bytecode without the preceding '0x'
@@ -40,6 +41,11 @@ export interface SdbVariable {
   type: string;
   scope: number;
   position: number | null;
+}
+
+export interface SdbExpressionFunction {
+  name: string;
+  code: string;
 }
 
 export class LibSdb extends EventEmitter {
@@ -100,8 +106,8 @@ export class LibSdb extends EventEmitter {
       if(contracts[key].sourcePath !== null) {
         contracts[key].pcMap = code.util.nameOpCodes(new Buffer(contracts[key].runtimeBytecode.substring(2), 'hex'))[1];
 
-        const inputContents = readFileSync(contracts[key].sourcePath).toString();
-        contracts[key].lineBreaks = sourceMappingDecoder.getLinebreakPositions(inputContents);
+        contracts[key].souceCode = readFileSync(contracts[key].sourcePath).toString();
+        contracts[key].lineBreaks = sourceMappingDecoder.getLinebreakPositions(contracts[key].sourceCode);
 
         contracts[key].functionNames = {};
         Object.keys(contracts[key].functionHashes).forEach((functionName) => {
@@ -609,9 +615,53 @@ export class LibSdb extends EventEmitter {
     return false;
   }
 
+  private findArguments(expression: string): any {
+    const result = parseExpression(expression, "solidity-expression");
+
+    return result;
+  }
+
+  private generateFunction(expression: string, args: SdbVariable[]): SdbExpressionFunction {
+    const functionName: string = "sdb_" + uuidv4().replace("-", "");
+
+    const argsString = args.map((arg) => {
+      return arg.type + " " + arg.name;
+    }).join(",");
+
+    const functionCode: string =
+`
+function ` + functionName + `(` + argsString + `) {
+  ` + expression + (expression.endsWith(';') ? '' : ';') + `
+}
+`
+
+    let expressionFunction = <SdbExpressionFunction> {
+      name: functionName,
+      args: args,
+      code: functionCode
+    };
+
+    return expressionFunction;
+  }
+
   public evaluate(expression: string, context: string | undefined, frameId: number | undefined): string {
     let value: string = "";
-    const contract = this._compilationResult.contracts[this._compilationResult.contractMap[this._stepData.contractAddress]];
+    const contractName = this._compilationResult.contractMap[this._stepData.contractAddress];
+    let contract = this._compilationResult.contracts[contractName];
+    const contractDeclarationPosition = contract.sourceCode.indexOf("contract " + contractName);
+    let functionInsertPosition: number | null = null;
+    for (let i = 0; i < contract.lineBreaks.length; i++) {
+      if (contract.lineBreaks[i] > contractDeclarationPosition) {
+        functionInsertPosition = contract.lineBreaks[i] + 1;
+        break;
+      }
+    }
+    if (functionInsertPosition !== null) {
+      const functionArgs = this.findArguments(expression);
+      const functionInsert = this.generateFunction(expression, functionArgs);
+      contract.sourceCode = [contract.sourceCode.slice(0, functionInsertPosition), functionInsert, contract.sourceCode.slice(functionInsertPosition)].join('');
+      contract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(contract.sourceCode);
+    }
 
     if (this._stepData !== null && this._stepData.location !== null && this._stepData.location.start !== null) {
       const currentLine = this._stepData.location.start.line;
