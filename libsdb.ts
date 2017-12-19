@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 
 const CircularJSON = require("circular-json");
 const BigNumber = require("bignumber.js");
+const traverse = require("traverse");
 const parseExpression = require("/home/mike/projects/solidity-parser/index").parse;
 //const VM = require("/home/mike/projects/ethereumjs-vm");
 const sourceMappingDecoder = new util.SourceMappingDecoder();
@@ -45,6 +46,8 @@ export interface SdbVariable {
 
 export interface SdbExpressionFunction {
   name: string;
+  args: SdbVariable[];
+  reference: string;
   code: string;
 }
 
@@ -70,7 +73,7 @@ export class LibSdb extends EventEmitter {
   
   private _priorUiCallStack: SdbStackFrame[] | null;
 
-  private _variables: Map<number, SdbVariable[]>;
+  private _variables: Map<number, Map<string, SdbVariable>>;
   
   // private _traceManager: trace.traceManager;
   // private _codeManager: code.codeManager;
@@ -87,7 +90,7 @@ export class LibSdb extends EventEmitter {
     this._callStack = [];
     this._priorUiCallStack = [];
     this._priorUiStepData = null;
-    this._variables = new Map<number, SdbVariable[]>();
+    this._variables = new Map<number, Map<string, SdbVariable>>();
 
     // this._traceManager = new trace.traceManager();
     // this._codeManager = new code.codeManager(this._traceManager);
@@ -106,7 +109,7 @@ export class LibSdb extends EventEmitter {
       if(contracts[key].sourcePath !== null) {
         contracts[key].pcMap = code.util.nameOpCodes(new Buffer(contracts[key].runtimeBytecode.substring(2), 'hex'))[1];
 
-        contracts[key].souceCode = readFileSync(contracts[key].sourcePath).toString();
+        contracts[key].sourceCode = readFileSync(contracts[key].sourcePath).toString();
         contracts[key].lineBreaks = sourceMappingDecoder.getLinebreakPositions(contracts[key].sourceCode);
 
         contracts[key].functionNames = {};
@@ -120,7 +123,7 @@ export class LibSdb extends EventEmitter {
     const astWalker = new util.AstWalker();
     astWalker.walk(this._compilationResult.sources["DebugContract.sol"].AST, (node) => {
       if (node.id) {
-        this._variables[node.id] = [];
+        this._variables[node.id] = new Map<string, SdbVariable>();
         if (node.name === "VariableDeclaration") {
           const variable = <SdbVariable> {
             name: node.attributes.name,
@@ -128,7 +131,7 @@ export class LibSdb extends EventEmitter {
             scope: node.attributes.scope,
             position: null
           };
-          this._variables[variable.scope].push(variable);
+          this._variables[variable.scope][variable.name] = variable;
         }
       }
 
@@ -241,9 +244,11 @@ export class LibSdb extends EventEmitter {
         const variableDeclarationNode = sourceMappingDecoder.findNodeAtSourceLocation("VariableDeclaration", sourceLocation, this._compilationResult.sources["DebugContract.sol"]);
         if (variableDeclarationNode) {
           const scope = variableDeclarationNode.attributes.scope;
-          for (let i = 0; i < this._variables[scope].length; i++) {
-            if (this._variables[scope][i].name === variableDeclarationNode.attributes.name) {
-              this._variables[scope][i].position = data.content.stack.length
+          const names = Object.keys(this._variables[scope]);
+          for (let i = 0; i < names.length; i++) {
+            const name = names[i];
+            if (name === variableDeclarationNode.attributes.name) {
+              this._variables[scope][name].position = data.content.stack.length
               break;
             }
           }
@@ -378,13 +383,17 @@ export class LibSdb extends EventEmitter {
     for (let i = 0; i < this._stepData.scope.length; i++) {
       const scope = this._stepData.scope[i];
       const scopeVars = this._variables[scope];
-      for (let j = 0; j < scopeVars.length; j++) {
-        if (scopeVars[j].position && stack.length > scopeVars[j].position) {
-          const buf = new Buffer(stack[scopeVars[j].position].data);
+      const names = Object.keys(scopeVars);
+      for (let j = 0; j < names.length; j++) {
+        const name = names[j];
+        if (typeof scopeVars[name] === "object" &&
+            "position" in scopeVars[name] &&
+            scopeVars[name].position !== null && stack.length > scopeVars[name].position) {
+          const buf = new Buffer(stack[scopeVars[name].position].data);
           const num = new BigNumber("0x" + buf.toString("hex"));
           variables.push({
-            name: scopeVars[j].name,
-            type: scopeVars[j].type,
+            name: name,
+            type: scopeVars[name].type,
             value: num.toString(),
             variablesReference: 0
           });
@@ -615,28 +624,69 @@ export class LibSdb extends EventEmitter {
     return false;
   }
 
-  private findArguments(expression: string): any {
+  private findArguments(frameId: number | undefined, expression: string): SdbVariable[] {
+    let variables: SdbVariable[] = [];
     const result = parseExpression(expression, "solidity-expression");
 
-    return result;
+    let identifiers = traverse(result.body).reduce((acc, x) => {
+      if (typeof x === "object" && "type" in x && x.type === "Identifier") {
+        acc.push(x);
+      }
+      return acc;
+    });
+    identifiers.shift(); // TODO: remove root node?
+
+    let allVariables: Map<string, SdbVariable> = new Map<string, SdbVariable>();
+    for (let i = 0; i < this._stepData.scope.length; i++) {
+      const scope = this._stepData.scope[i];
+      const scopeVars = this._variables[scope];
+      const names = Object.keys(scopeVars);
+      for (let j = 0; j < names.length; j++) {
+        const name = names[j];
+        if (typeof scopeVars[name] === "object" &&
+            "position" in scopeVars[name] &&
+            scopeVars[name].position !== null) {
+          allVariables[name] = scopeVars[name];
+        }
+      }
+    }
+
+    for (let i = 0; i < identifiers.length; i++) {
+      if (identifiers[i].name in allVariables) {
+        variables.push(allVariables[identifiers[i].name]);
+      }
+      else {
+        // woah, we don't know that identifier/variable. error?
+      }
+    }
+
+    return variables;
   }
 
   private generateFunction(expression: string, args: SdbVariable[]): SdbExpressionFunction {
-    const functionName: string = "sdb_" + uuidv4().replace("-", "");
-
+    const functionName: string = "sdb_" + uuidv4().replace(/-/g, "");
+    
     const argsString = args.map((arg) => {
       return arg.type + " " + arg.name;
     }).join(",");
+    
+    const argsRefString = args.map((arg) => {
+      return arg.name;
+    }).join(",");
+
+    const functionReference = functionName + "(" + argsRefString + ");";
 
     const functionCode: string =
 `
 function ` + functionName + `(` + argsString + `) {
-  ` + expression + (expression.endsWith(';') ? '' : ';') + `
+  ` + expression + `
 }
+
 `
 
     let expressionFunction = <SdbExpressionFunction> {
       name: functionName,
+      reference: functionReference,
       args: args,
       code: functionCode
     };
@@ -646,31 +696,39 @@ function ` + functionName + `(` + argsString + `) {
 
   public evaluate(expression: string, context: string | undefined, frameId: number | undefined): string {
     let value: string = "";
-    const contractName = this._compilationResult.contractMap[this._stepData.contractAddress];
-    let contract = this._compilationResult.contracts[contractName];
-    const contractDeclarationPosition = contract.sourceCode.indexOf("contract " + contractName);
-    let functionInsertPosition: number | null = null;
-    for (let i = 0; i < contract.lineBreaks.length; i++) {
-      if (contract.lineBreaks[i] > contractDeclarationPosition) {
-        functionInsertPosition = contract.lineBreaks[i] + 1;
-        break;
-      }
-    }
-    if (functionInsertPosition !== null) {
-      const functionArgs = this.findArguments(expression);
-      const functionInsert = this.generateFunction(expression, functionArgs);
-      contract.sourceCode = [contract.sourceCode.slice(0, functionInsertPosition), functionInsert, contract.sourceCode.slice(functionInsertPosition)].join('');
-      contract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(contract.sourceCode);
-    }
+    expression = expression + (expression.endsWith(';') ? '' : ';');
+    const contractKey = this._compilationResult.contractMap[this._stepData.contractAddress];
+    let contractName = contractKey.split(":");
+    contractName = contractName[contractName.length - 1];
+    let contract = this._compilationResult.contracts[contractKey];
+
+    const functionArgs = this.findArguments(frameId, expression);
+    const functionInsert = this.generateFunction(expression, functionArgs);
 
     if (this._stepData !== null && this._stepData.location !== null && this._stepData.location.start !== null) {
       const currentLine = this._stepData.location.start.line;
-      let sourceCode = readFileSync(contract.sourcePath).toString();
       if (currentLine > 0) {
         const insertPosition = contract.lineBreaks[currentLine - 1] + 1;
-        sourceCode = [sourceCode.slice(0, insertPosition), expression + ";\n", sourceCode.slice(insertPosition)].join('');
-        let result = compile(sourceCode, 0);
-        console.log(result);
+
+        contract.sourceCode = [contract.sourceCode.slice(0, insertPosition), functionInsert.reference + "\n", contract.sourceCode.slice(insertPosition)].join('');
+        contract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(contract.sourceCode);
+
+        const contractDeclarationPosition = contract.sourceCode.indexOf("contract " + contractName);
+        let functionInsertPosition: number | null = null;
+        for (let i = 0; i < contract.lineBreaks.length; i++) {
+          if (contract.lineBreaks[i] > contractDeclarationPosition) {
+            functionInsertPosition = contract.lineBreaks[i] + 1;
+            break;
+          }
+        }
+
+        if (functionInsertPosition !== null) {
+          contract.sourceCode = [contract.sourceCode.slice(0, functionInsertPosition), functionInsert.code, contract.sourceCode.slice(functionInsertPosition)].join('');
+          contract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(contract.sourceCode);
+
+          let result = compile(contract.sourceCode, 0);
+          console.log(result);
+        }
       }
     }
 
