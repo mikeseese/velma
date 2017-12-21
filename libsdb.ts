@@ -57,6 +57,25 @@ export interface SdbExpressionFunction {
   code: string;
 }
 
+function adjustBreakpointLineNumbers(breakpoints: Map<string, SdbBreakpoint[]>, path: string, startLine: number, numLines: number): void {
+  let bps = breakpoints.get(path);
+  if (bps) {
+    for (let i = 0; i < bps.length; i++) {
+      if (bps[i].line >= startLine) {
+        bps[i].line += numLines;
+      }
+    }
+  }
+};
+
+function adjustCallstackLineNumbers(callstack: SdbStackFrame[], path: string, startLine: number, numLines: number): void {
+  for (let i = 0; i < callstack.length; i++) {
+    if (callstack[i].file === path && callstack[i].line >= startLine) {
+      callstack[i].line += numLines;
+    }
+  }
+};
+
 export class LibSdb extends EventEmitter {
 
   // maps from sourceFile to array of Mock breakpoints
@@ -72,11 +91,10 @@ export class LibSdb extends EventEmitter {
 
   private _stepData: any;
 
-  private _callStack: SdbStackFrame[];
-
   private _priorStepData: any | null;
   private _priorUiStepData: any | null;
-  
+
+  private _callStack: SdbStackFrame[];
   private _priorUiCallStack: SdbStackFrame[] | null;
 
   private _variables: Map<number, Map<string, SdbVariable>>;
@@ -285,6 +303,12 @@ export class LibSdb extends EventEmitter {
     }
     else if (triggerType === "step") {
       this.vmStepped(data);
+    }
+    else if (triggerType === "response") {
+      if (data.content && data.content.type === "putCodeResponse") {
+        // i guess we dont care right now that this is responding to the specific request yet; we will probably eventually
+        this.respondToDebugHook(); // eek, let the debugger run!
+      }
     }
   }
 
@@ -713,6 +737,10 @@ function ` + functionName + `(` + argsString + `) {
     const functionArgs = this.findArguments(frameId, expression);
     const functionInsert = this.generateFunction(expression, functionArgs);
 
+    let newBreakpoints: Map<string, SdbBreakpoint[]> = new Map<string, SdbBreakpoint[]>(this._breakPoints);
+    let newCallstack: SdbStackFrame[] = this._callStack.map((e) => { return e; });
+    let newPriorUiCallstack: SdbStackFrame[] | null = this._priorUiCallStack ? this._priorUiCallStack.map((e) => { return e; }) : null;
+
     if (this._stepData !== null && this._stepData.location !== null && this._stepData.location.start !== null) {
       const currentLine = this._stepData.location.start.line;
       if (currentLine > 0) {
@@ -720,6 +748,13 @@ function ` + functionName + `(` + argsString + `) {
 
         newContract.sourceCode = [newContract.sourceCode.slice(0, insertPosition), functionInsert.reference + "\n", newContract.sourceCode.slice(insertPosition)].join('');
         newContract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newContract.sourceCode);
+
+        // Adjust line numbers
+        adjustBreakpointLineNumbers(newBreakpoints, newContract.sourcePath, currentLine, 1);
+        adjustCallstackLineNumbers(newCallstack, newContract.sourcePath, currentLine, 1);
+        if (newPriorUiCallstack !== null) {
+          adjustCallstackLineNumbers(newPriorUiCallstack, newContract.sourcePath, currentLine, 1);
+        }
 
         const contractDeclarationPosition = newContract.sourceCode.indexOf("contract " + contractName);
         let functionInsertPosition: number | null = null;
@@ -733,6 +768,14 @@ function ` + functionName + `(` + argsString + `) {
         if (functionInsertPosition !== null) {
           newContract.sourceCode = [newContract.sourceCode.slice(0, functionInsertPosition), functionInsert.code, newContract.sourceCode.slice(functionInsertPosition)].join('');
           newContract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newContract.sourceCode);
+
+          // Adjust line numbers
+          const numNewLines = (functionInsert.code.match(/\n/g) || []).length;
+          adjustBreakpointLineNumbers(newBreakpoints, newContract.sourcePath, currentLine, numNewLines);
+          adjustCallstackLineNumbers(newCallstack, newContract.sourcePath, currentLine, numNewLines);
+          if (newPriorUiCallstack !== null) {
+            adjustCallstackLineNumbers(newPriorUiCallstack, newContract.sourcePath, currentLine, numNewLines);
+          }
 
           let result = compile(newContract.sourceCode, 0);
           const compiledContract = result.contracts[":DebugContract"];
@@ -817,8 +860,6 @@ function ` + functionName + `(` + argsString + `) {
           this._socket.write(CircularJSON.stringify(request));
 
           if (newLine !== null) {
-            // TODO: deal with all of the other stuff that depends on file locations
-            //   - change breakpoint locations
             this.setBreakPoint(newContract.sourcePath, newLine, false);
           }
           else {
@@ -833,8 +874,6 @@ function ` + functionName + `(` + argsString + `) {
             this.removeListener("evalResponse", handler)
             callback(response);
           });
-
-          this.respondToDebugHook(); // eek, let the debugger run!
         }
       }
     }
