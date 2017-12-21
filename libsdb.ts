@@ -20,14 +20,20 @@ const sourceMappingDecoder = new util.SourceMappingDecoder();
 export function GetFunctionProgramCount(bytecode, methodId) {
   const bytecodeSequence = "63" + methodId + "1460";
   const pos = bytecode.indexOf(bytecodeSequence);
-  const pc = bytecode[pos + bytecodeSequence.length] + bytecode[pos + bytecodeSequence.length + 1];
-  return parseInt(pc, 16);
+  if (pos < 0) {
+    return null;
+  }
+  else {
+    const pc = bytecode[pos + bytecodeSequence.length] + bytecode[pos + bytecodeSequence.length + 1];
+    return parseInt(pc, 16);
+  }
 }
 
 export interface SdbBreakpoint {
   id: number;
   line: number;
   verified: boolean;
+  visible: boolean;
 }
 
 export interface SdbStackFrame {
@@ -115,8 +121,10 @@ export class LibSdb extends EventEmitter {
         contracts[key].functionNames = {};
         Object.keys(contracts[key].functionHashes).forEach((functionName) => {
           const pc = GetFunctionProgramCount(contracts[key].bytecode, contracts[key].functionHashes[functionName]);
-          contracts[key].functionNames[pc] = functionName;
-        })
+          if (pc !== null) {
+            contracts[key].functionNames[pc] = functionName;
+          }
+        });
       }
     });
 
@@ -407,9 +415,9 @@ export class LibSdb extends EventEmitter {
   /*
    * Set breakpoint in file with given line.
    */
-  public setBreakPoint(path: string, line: number) : SdbBreakpoint {
+  public setBreakPoint(path: string, line: number, visible: boolean = true) : SdbBreakpoint {
 
-    const bp = <SdbBreakpoint> { verified: false, line, id: this._breakpointId++ };
+    const bp = <SdbBreakpoint> { verified: false, line, id: this._breakpointId++, visible: visible };
     let bps = this._breakPoints.get(path);
     if (!bps) {
       bps = new Array<SdbBreakpoint>();
@@ -694,13 +702,13 @@ function ` + functionName + `(` + argsString + `) {
     return expressionFunction;
   }
 
-  public evaluate(expression: string, context: string | undefined, frameId: number | undefined): string {
-    let value: string = "";
+  public evaluate(expression: string, context: string | undefined, frameId: number | undefined, callback) {
     expression = expression + (expression.endsWith(';') ? '' : ';');
     const contractKey = this._compilationResult.contractMap[this._stepData.contractAddress];
     let contractName = contractKey.split(":");
     contractName = contractName[contractName.length - 1];
     let contract = this._compilationResult.contracts[contractKey];
+    let newContract = CircularJSON.parse(CircularJSON.stringify(contract));
 
     const functionArgs = this.findArguments(frameId, expression);
     const functionInsert = this.generateFunction(expression, functionArgs);
@@ -708,31 +716,128 @@ function ` + functionName + `(` + argsString + `) {
     if (this._stepData !== null && this._stepData.location !== null && this._stepData.location.start !== null) {
       const currentLine = this._stepData.location.start.line;
       if (currentLine > 0) {
-        const insertPosition = contract.lineBreaks[currentLine - 1] + 1;
+        const insertPosition = newContract.lineBreaks[currentLine - 1] + 1;
 
-        contract.sourceCode = [contract.sourceCode.slice(0, insertPosition), functionInsert.reference + "\n", contract.sourceCode.slice(insertPosition)].join('');
-        contract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(contract.sourceCode);
+        newContract.sourceCode = [newContract.sourceCode.slice(0, insertPosition), functionInsert.reference + "\n", newContract.sourceCode.slice(insertPosition)].join('');
+        newContract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newContract.sourceCode);
 
-        const contractDeclarationPosition = contract.sourceCode.indexOf("contract " + contractName);
+        const contractDeclarationPosition = newContract.sourceCode.indexOf("contract " + contractName);
         let functionInsertPosition: number | null = null;
-        for (let i = 0; i < contract.lineBreaks.length; i++) {
-          if (contract.lineBreaks[i] > contractDeclarationPosition) {
-            functionInsertPosition = contract.lineBreaks[i] + 1;
+        for (let i = 0; i < newContract.lineBreaks.length; i++) {
+          if (newContract.lineBreaks[i] > contractDeclarationPosition) {
+            functionInsertPosition = newContract.lineBreaks[i] + 1;
             break;
           }
         }
 
         if (functionInsertPosition !== null) {
-          contract.sourceCode = [contract.sourceCode.slice(0, functionInsertPosition), functionInsert.code, contract.sourceCode.slice(functionInsertPosition)].join('');
-          contract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(contract.sourceCode);
+          newContract.sourceCode = [newContract.sourceCode.slice(0, functionInsertPosition), functionInsert.code, newContract.sourceCode.slice(functionInsertPosition)].join('');
+          newContract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newContract.sourceCode);
 
-          let result = compile(contract.sourceCode, 0);
-          console.log(result);
+          let result = compile(newContract.sourceCode, 0);
+          const compiledContract = result.contracts[":DebugContract"];
+
+          // merge compilation
+          newContract.assembly = compiledContract.assembly;
+          newContract.bytecode = compiledContract.bytecode;
+          newContract.functionHashes = compiledContract.functionHashes;
+          newContract.gasEstimates = compiledContract.gasEstimates;
+          newContract.interface = compiledContract.interface;
+          newContract.metadata = compiledContract.metadata;
+          newContract.opcodes = compiledContract.opcodes;
+          newContract.runtimeBytecode = compiledContract.runtimeBytecode;
+          newContract.srcmap = compiledContract.srcmap;
+          newContract.srcmapRuntime = compiledContract.srcmapRuntime;
+
+          // add our flair
+          newContract.pcMap = code.util.nameOpCodes(new Buffer(newContract.runtimeBytecode.substring(2), 'hex'))[1];
+          newContract.functionNames = {};
+          Object.keys(newContract.functionHashes).forEach((functionName) => {
+            const pc = GetFunctionProgramCount(newContract.bytecode, newContract.functionHashes[functionName]);
+            if (pc !== null) {
+              newContract.functionNames[pc] = functionName;
+            }
+          });
+
+          const codeOffset = functionInsert.code.length + functionInsert.reference.length + 1; // 1 is for the \n after the reference insertion
+
+          let sourceLocationEvalFunction = null;
+          const astWalker = new util.AstWalker();
+          astWalker.walk(result.sources[""].AST, (node) => {
+            if (sourceLocationEvalFunction !== null) {
+              return false;
+            }
+
+            if (node.name === "FunctionCall") {
+              for (let i = 0; i < node.children.length; i++) {
+                if (node.children[i].attributes.value === functionInsert.name) {
+                  sourceLocationEvalFunction = sourceMappingDecoder.sourceLocationFromAstNode(node);
+                  return false;
+                }
+              }
+            }
+
+            return true;
+          });
+
+          const newIndex = sourceMappingDecoder.toIndex(sourceLocationEvalFunction, newContract.srcmapRuntime);
+          let newPc: number | null = null;
+          Object.keys(newContract.pcMap).forEach((key, index) => {
+            if (newIndex === newIndex) {
+              newPc = parseInt(key);
+            }
+          });
+
+          let newSourceLocation = CircularJSON.parse(CircularJSON.stringify(this._stepData.source));
+          newSourceLocation.start += codeOffset;
+          let newLine: number | null = null;
+          for (let i = 0; i < newContract.lineBreaks.length; i++) {
+            if (i === 0 && newSourceLocation.start < newContract.lineBreaks[i]) {
+              newLine = i;
+              break;
+            }
+            else if (i > 0 && newContract.lineBreaks[i - 1] < newSourceLocation.start && newSourceLocation.start < newContract.lineBreaks[i]) {
+              newLine = i;
+              break;
+            }
+          }
+
+          // push the code
+          const msgId = uuidv4();
+          const request = {
+            "id": msgId,
+            "messageType": "request",
+            "content": {
+              "type": "putCodeRequest",
+              "address": newContract.contractAddress,
+              "code": newContract.runtimeBytecode,
+              "pc": newPc
+            }
+          };
+          this._socket.write(CircularJSON.stringify(request));
+
+          if (newLine !== null) {
+            // TODO: deal with all of the other stuff that depends on file locations
+            //   - change breakpoint locations
+            this.setBreakPoint(newContract.sourcePath, newLine, false);
+          }
+          else {
+            // TODO: handles this better
+            console.log("ERROR: We could not find the line of after we're evaluating...but we're going to execute anyway? shrug");
+          }
+
+          // TODO: set this. variables to new stuff
+          //   - compilationResult for one
+
+          this.on("evalResponse", function handler(this: LibSdb, response) {
+            this.removeListener("evalResponse", handler)
+            callback(response);
+          });
+
+          this.respondToDebugHook(); // eek, let the debugger run!
         }
       }
     }
-
-    return value;
   }
 
   private sendEvent(event: string, ... args: any[]) {
