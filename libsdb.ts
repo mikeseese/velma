@@ -69,6 +69,7 @@ function adjustBreakpointLineNumbers(breakpoints: Map<string, SdbBreakpoint[]>, 
 };
 
 function adjustCallstackLineNumbers(callstack: SdbStackFrame[], path: string, startLine: number, numLines: number): void {
+  // TODO: should we modify the PC as well? probably
   for (let i = 0; i < callstack.length; i++) {
     if (callstack[i].file === path && callstack[i].line >= startLine) {
       callstack[i].line += numLines;
@@ -737,9 +738,33 @@ function ` + functionName + `(` + argsString + `) {
     const functionArgs = this.findArguments(frameId, expression);
     const functionInsert = this.generateFunction(expression, functionArgs);
 
-    let newBreakpoints: Map<string, SdbBreakpoint[]> = new Map<string, SdbBreakpoint[]>(this._breakPoints);
-    let newCallstack: SdbStackFrame[] = this._callStack.map((e) => { return e; });
-    let newPriorUiCallstack: SdbStackFrame[] | null = this._priorUiCallStack ? this._priorUiCallStack.map((e) => { return e; }) : null;
+    let newBreakpoints: Map<string, SdbBreakpoint[]> = new Map<string, SdbBreakpoint[]>();
+    this._breakPoints.forEach((values: SdbBreakpoint[], key: string) => {
+      let copyValues: SdbBreakpoint[] = [];
+      for (let i = 0; i < values.length; i++) {
+        let copyValue = <SdbBreakpoint> { id: values[i].id, line: values[i].line, verified: values[i].verified, visible: values[i].visible };
+        copyValues.push(copyValue);
+      }
+      newBreakpoints[key] = copyValues;
+    });
+
+    let newCallstack: SdbStackFrame[] = [];
+    for (let i = 0; i < this._callStack.length; i++) {
+      let copyValue = <SdbStackFrame> { file: this._callStack[i].file, line: this._callStack[i].line, name: this._callStack[i].name, pc: this._callStack[i].pc };
+      newCallstack.push(copyValue);
+    }
+
+    let newPriorUiCallstack: SdbStackFrame[] | null;
+    if (this._priorUiCallStack === null) {
+      newPriorUiCallstack = null;
+    }
+    else {
+      newPriorUiCallstack = [];
+      for (let i = 0; i < this._priorUiCallStack.length; i++) {
+        let copyValue = <SdbStackFrame> { file: this._priorUiCallStack[i].file, line: this._priorUiCallStack[i].line, name: this._priorUiCallStack[i].name, pc: this._priorUiCallStack[i].pc };
+        newPriorUiCallstack.push(copyValue);
+      }
+    }
 
     if (this._stepData !== null && this._stepData.location !== null && this._stepData.location.start !== null) {
       const currentLine = this._stepData.location.start.line;
