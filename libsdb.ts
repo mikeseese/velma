@@ -9,7 +9,6 @@ const CircularJSON = require("circular-json");
 const BigNumber = require("bignumber.js");
 const traverse = require("traverse");
 const parseExpression = require("/home/mike/projects/solidity-parser/index").parse;
-//const VM = require("/home/mike/projects/ethereumjs-vm");
 const sourceMappingDecoder = new util.SourceMappingDecoder();
 
 // bytecode is a hex string of the bytecode without the preceding '0x'
@@ -99,11 +98,8 @@ export class LibSdb extends EventEmitter {
   private _priorUiCallStack: SdbStackFrame[] | null;
 
   private _variables: Map<number, Map<string, SdbVariable>>;
-  
-  // private _traceManager: trace.traceManager;
-  // private _codeManager: code.codeManager;
-  // private _solidityProxy: solidity.proxy;
-  // private _internalCallTree: util.internalCallTree;
+
+  private _lineOffsets: Map<number, number>;
 
   constructor() {
     super();
@@ -116,17 +112,12 @@ export class LibSdb extends EventEmitter {
     this._priorUiCallStack = [];
     this._priorUiStepData = null;
     this._variables = new Map<number, Map<string, SdbVariable>>();
-
-    // this._traceManager = new trace.traceManager();
-    // this._codeManager = new code.codeManager(this._traceManager);
-    // this._solidityProxy = new solidity.proxy(this._traceManager, this._codeManager);
-    // this._internalCallTree = new util.internalCallTree(this, this._traceManager, this._solidityProxy, this._codeManager, { includeLocalVariables: true });
+    this._lineOffsets = new Map<number, number>();
   }
-
+  
   private contractsChanged(data: any) {
     // addresses changed
     this._compilationResult = data.content;
-    //this._solidityProxy.reset(this._compilationResult);
     this.sendEvent("solidityProxyLoaded");
     
     let contracts = this._compilationResult.contracts;
@@ -298,6 +289,7 @@ export class LibSdb extends EventEmitter {
   private socketHandler(dataSerialized: string) {
     const data = CircularJSON.parse(dataSerialized);
     const triggerType = data.triggerType;
+    const messageType = data.messageType;
   
     if (triggerType === "monitoredContractsChanged") {
       this.contractsChanged(data);
@@ -305,7 +297,7 @@ export class LibSdb extends EventEmitter {
     else if (triggerType === "step") {
       this.vmStepped(data);
     }
-    else if (triggerType === "response") {
+    else if (messageType === "response") {
       if (data.content && data.content.type === "putCodeResponse") {
         // i guess we dont care right now that this is responding to the specific request yet; we will probably eventually
         this.respondToDebugHook(); // eek, let the debugger run!
@@ -484,13 +476,13 @@ export class LibSdb extends EventEmitter {
    * Run through the file.
    * If stepEvent is specified only run a single step and emit the stepEvent.
    */
-  private run(reverse = false, stepEvent?: string) : void {
+  private run(reverse = false, stepEvent?: string, content: any = null) : void {
     this._priorUiCallStack = CircularJSON.parse(CircularJSON.stringify(this._callStack));
     this._priorUiStepData = CircularJSON.parse(CircularJSON.stringify(this._stepData));
 
     // We should be stopped currently, which is why we're calling this function
     // so we should continue on now
-    this.respondToDebugHook();
+    this.respondToDebugHook(content);
 
     if (reverse) {
       // TODO: implement reverse running
@@ -524,7 +516,7 @@ export class LibSdb extends EventEmitter {
     }
   }
 
-  private respondToDebugHook(content = null) {
+  private respondToDebugHook(content: any = null) {
     // don't respond if we don't actually need to
     if (this._stepData === null) {
       return;
@@ -734,6 +726,7 @@ function ` + functionName + `(` + argsString + `) {
     contractName = contractName[contractName.length - 1];
     let contract = this._compilationResult.contracts[contractKey];
     let newContract = CircularJSON.parse(CircularJSON.stringify(contract));
+    let newLineOffset = new Map<number, number>();
 
     const functionArgs = this.findArguments(frameId, expression);
     const functionInsert = this.generateFunction(expression, functionArgs);
@@ -745,7 +738,7 @@ function ` + functionName + `(` + argsString + `) {
         let copyValue = <SdbBreakpoint> { id: values[i].id, line: values[i].line, verified: values[i].verified, visible: values[i].visible };
         copyValues.push(copyValue);
       }
-      newBreakpoints[key] = copyValues;
+      newBreakpoints.set(key, copyValues);
     });
 
     let newCallstack: SdbStackFrame[] = [];
@@ -783,23 +776,25 @@ function ` + functionName + `(` + argsString + `) {
 
         const contractDeclarationPosition = newContract.sourceCode.indexOf("contract " + contractName);
         let functionInsertPosition: number | null = null;
+        let functionInsertLine: number | null = null;
         for (let i = 0; i < newContract.lineBreaks.length; i++) {
           if (newContract.lineBreaks[i] > contractDeclarationPosition) {
+            functionInsertLine = i + 1;
             functionInsertPosition = newContract.lineBreaks[i] + 1;
             break;
           }
         }
 
-        if (functionInsertPosition !== null) {
+        if (functionInsertPosition !== null && functionInsertLine !== null) {
           newContract.sourceCode = [newContract.sourceCode.slice(0, functionInsertPosition), functionInsert.code, newContract.sourceCode.slice(functionInsertPosition)].join('');
           newContract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newContract.sourceCode);
 
           // Adjust line numbers
           const numNewLines = (functionInsert.code.match(/\n/g) || []).length;
-          adjustBreakpointLineNumbers(newBreakpoints, newContract.sourcePath, currentLine, numNewLines);
-          adjustCallstackLineNumbers(newCallstack, newContract.sourcePath, currentLine, numNewLines);
+          adjustBreakpointLineNumbers(newBreakpoints, newContract.sourcePath, functionInsertLine, numNewLines);
+          adjustCallstackLineNumbers(newCallstack, newContract.sourcePath, functionInsertLine, numNewLines);
           if (newPriorUiCallstack !== null) {
-            adjustCallstackLineNumbers(newPriorUiCallstack, newContract.sourcePath, currentLine, numNewLines);
+            adjustCallstackLineNumbers(newPriorUiCallstack, newContract.sourcePath, functionInsertLine, numNewLines);
           }
 
           let result = compile(newContract.sourceCode, 0);
@@ -851,7 +846,7 @@ function ` + functionName + `(` + argsString + `) {
           const newIndex = sourceMappingDecoder.toIndex(sourceLocationEvalFunction, newContract.srcmapRuntime);
           let newPc: number | null = null;
           Object.keys(newContract.pcMap).forEach((key, index) => {
-            if (newIndex === newIndex) {
+            if (index === newIndex) {
               newPc = parseInt(key);
             }
           });
@@ -870,19 +865,13 @@ function ` + functionName + `(` + argsString + `) {
             }
           }
 
-          // push the code
-          const msgId = uuidv4();
-          const request = {
-            "id": msgId,
-            "messageType": "request",
-            "content": {
-              "type": "putCodeRequest",
-              "address": newContract.contractAddress,
-              "code": newContract.runtimeBytecode,
-              "pc": newPc
-            }
-          };
-          this._socket.write(CircularJSON.stringify(request));
+          // TODO: set this. variables to new stuff
+          this._compilationResult.errors = result.errors;
+          this._compilationResult.sources["DebugContract.sol"] = result.sources[""];
+          contract = newContract;
+          this._breakPoints = newBreakpoints;
+          this._callStack = newCallstack;
+          this._priorUiCallStack = newPriorUiCallstack;
 
           if (newLine !== null) {
             this.setBreakPoint(newContract.sourcePath, newLine, false);
@@ -892,16 +881,58 @@ function ` + functionName + `(` + argsString + `) {
             console.log("ERROR: We could not find the line of after we're evaluating...but we're going to execute anyway? shrug");
           }
 
-          // TODO: set this. variables to new stuff
-          //   - compilationResult for one
-
           this.on("evalResponse", function handler(this: LibSdb, response) {
             this.removeListener("evalResponse", handler)
             callback(response);
           });
+          
+          // push the code
+          const content = {
+            "type": "putCodeRequest",
+            "address": newContract.address,
+            "code": newContract.runtimeBytecode,
+            "pc": newPc
+          };
+          this.run(false, undefined, content);
         }
       }
     }
+  }
+
+  private addLineOffset(line: number, numLines: number) {
+    this._lineOffsets.forEach((line, numLines) => {
+      if (newLine >= line) {
+        originalLine += numLines;
+      }
+    });
+    const numPrevLines: number = this._lineOffsets.get(line) || 0;
+    this._lineOffsets.set(line, numPrevLines + numLines);
+  }
+
+  // this is the line number in the original source using a modified/step data line number
+  private getOriginalLine(newLine: number): number {
+    let originalLine = newLine;
+
+    this._lineOffsets.forEach((line, numLines) => {
+      if (newLine >= line) {
+        originalLine -= numLines;
+      }
+    });
+
+    return originalLine;
+  }
+
+  // this is the line number in the modified source using an original line number
+  private getNewLine(originalLine: number): number {
+    let newLine = originalLine;
+
+    this._lineOffsets.forEach((line, numLines) => {
+      if (originalLine >= line) {
+        newLine += numLines;
+      }
+    });
+
+    return newLine;
   }
 
   private sendEvent(event: string, ... args: any[]) {
