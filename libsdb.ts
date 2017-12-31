@@ -33,6 +33,7 @@ export interface SdbBreakpoint {
   line: number;
   verified: boolean;
   visible: boolean;
+  originalSource: boolean;
 }
 
 export interface SdbStackFrame {
@@ -52,6 +53,7 @@ export interface SdbVariable {
 export interface SdbExpressionFunction {
   name: string;
   args: SdbVariable[];
+  argsString: string;
   reference: string;
   code: string;
 }
@@ -75,6 +77,10 @@ function adjustCallstackLineNumbers(callstack: SdbStackFrame[], path: string, st
     }
   }
 };
+
+/** Parse the error message thrown with a naive compile in order to determine the actual return type. This is the hacky alternative to parsing an AST. */
+const regexpReturnError = /Return argument type (.*) is not implicitly convertible to expected type \(type of first return variable\) bool./
+const matchReturnTypeFromError = message => message.match(regexpReturnError);
 
 export class LibSdb extends EventEmitter {
 
@@ -382,7 +388,7 @@ export class LibSdb extends EventEmitter {
         "index": startFrame,
         "name": functionName,
         "file": this._compilationResult.contracts["DebugContract.sol:DebugContract"].sourcePath,
-        "line": this._stepData.location.start.line
+        "line": this.getOriginalLine(this._stepData.location.start.line)
       });
     }
 
@@ -391,7 +397,7 @@ export class LibSdb extends EventEmitter {
         "index": i + 1, // offset by one due to the current line "at the top of the stack", but not in the callstack variable
         "name": this._callStack[i].name,
         "file": this._callStack[i].file,
-        "line": this._callStack[i].line
+        "line": this.getOriginalLine(this._callStack[i].line)
       });
     }
 
@@ -432,9 +438,13 @@ export class LibSdb extends EventEmitter {
   /*
    * Set breakpoint in file with given line.
    */
-  public setBreakPoint(path: string, line: number, visible: boolean = true) : SdbBreakpoint {
+  public setBreakPoint(path: string, line: number, visible: boolean = true, originalSource: boolean = true) : SdbBreakpoint {
+    if (originalSource) {
+      // we need to modify the line number using line offsets with the original source bp's
+      line = this.getNewLine(line);
+    }
 
-    const bp = <SdbBreakpoint> { verified: false, line, id: this._breakpointId++, visible: visible };
+    const bp = <SdbBreakpoint> { verified: false, line, id: this._breakpointId++, visible: visible, originalSource: originalSource };
     let bps = this._breakPoints.get(path);
     if (!bps) {
       bps = new Array<SdbBreakpoint>();
@@ -703,8 +713,8 @@ export class LibSdb extends EventEmitter {
 
     const functionCode: string =
 `
-function ` + functionName + `(` + argsString + `) {
-  ` + expression + `
+function ` + functionName + `(` + argsString + `) returns (bool) {
+  return ` + expression + `
 }
 
 `
@@ -713,6 +723,7 @@ function ` + functionName + `(` + argsString + `) {
       name: functionName,
       reference: functionReference,
       args: args,
+      argsString: argsString,
       code: functionCode
     };
 
@@ -720,16 +731,24 @@ function ` + functionName + `(` + argsString + `) {
   }
 
   public evaluate(expression: string, context: string | undefined, frameId: number | undefined, callback) {
+    if (context === "hover") {
+      return;
+    }
+
     expression = expression + (expression.endsWith(';') ? '' : ';');
     const contractKey = this._compilationResult.contractMap[this._stepData.contractAddress];
     let contractName = contractKey.split(":");
     contractName = contractName[contractName.length - 1];
     let contract = this._compilationResult.contracts[contractKey];
     let newContract = CircularJSON.parse(CircularJSON.stringify(contract));
-    let newLineOffset = new Map<number, number>();
 
     const functionArgs = this.findArguments(frameId, expression);
     const functionInsert = this.generateFunction(expression, functionArgs);
+
+    let newLineOffsets = new Map<number, number>();
+    this._lineOffsets.forEach((value: number, key: number) => {
+      newLineOffsets.set(key, value);
+    });
 
     let newBreakpoints: Map<string, SdbBreakpoint[]> = new Map<string, SdbBreakpoint[]>();
     this._breakPoints.forEach((values: SdbBreakpoint[], key: string) => {
@@ -768,6 +787,7 @@ function ` + functionName + `(` + argsString + `) {
         newContract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newContract.sourceCode);
 
         // Adjust line numbers
+        this.addLineOffset(currentLine, 1, newLineOffsets);
         adjustBreakpointLineNumbers(newBreakpoints, newContract.sourcePath, currentLine, 1);
         adjustCallstackLineNumbers(newCallstack, newContract.sourcePath, currentLine, 1);
         if (newPriorUiCallstack !== null) {
@@ -791,6 +811,7 @@ function ` + functionName + `(` + argsString + `) {
 
           // Adjust line numbers
           const numNewLines = (functionInsert.code.match(/\n/g) || []).length;
+          this.addLineOffset(functionInsertLine, numNewLines, newLineOffsets);
           adjustBreakpointLineNumbers(newBreakpoints, newContract.sourcePath, functionInsertLine, numNewLines);
           adjustCallstackLineNumbers(newCallstack, newContract.sourcePath, functionInsertLine, numNewLines);
           if (newPriorUiCallstack !== null) {
@@ -798,6 +819,20 @@ function ` + functionName + `(` + argsString + `) {
           }
 
           let result = compile(newContract.sourceCode, 0);
+          for (let i = 0; i < result.errors.length; i++) {
+            const error = result.errors[i];
+            let match = matchReturnTypeFromError(error);
+            if (match) {
+              // return type
+              const refString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (bool)`;
+              const repString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (` + match[1] + `)`;
+              newContract.sourceCode = newContract.sourceCode.replace(refString, repString);
+              result = compile(newContract.sourceCode, 0);
+            }
+            else {
+
+            }
+          }
           const compiledContract = result.contracts[":DebugContract"];
 
           // merge compilation
@@ -868,13 +903,14 @@ function ` + functionName + `(` + argsString + `) {
           // TODO: set this. variables to new stuff
           this._compilationResult.errors = result.errors;
           this._compilationResult.sources["DebugContract.sol"] = result.sources[""];
-          contract = newContract;
+          this._compilationResult.contracts[contractKey] = newContract;
           this._breakPoints = newBreakpoints;
           this._callStack = newCallstack;
           this._priorUiCallStack = newPriorUiCallstack;
+          this._lineOffsets = newLineOffsets;
 
           if (newLine !== null) {
-            this.setBreakPoint(newContract.sourcePath, newLine, false);
+            this.setBreakPoint(newContract.sourcePath, newLine, false, false);
           }
           else {
             // TODO: handles this better
@@ -899,21 +935,16 @@ function ` + functionName + `(` + argsString + `) {
     }
   }
 
-  private addLineOffset(line: number, numLines: number) {
-    this._lineOffsets.forEach((line, numLines) => {
-      if (newLine >= line) {
-        originalLine += numLines;
-      }
-    });
-    const numPrevLines: number = this._lineOffsets.get(line) || 0;
-    this._lineOffsets.set(line, numPrevLines + numLines);
+  private addLineOffset(line: number, numLines: number, lineOffsets: Map<number, number> = this._lineOffsets) {
+    const numPrevLines: number = lineOffsets.get(line) || 0;
+    lineOffsets.set(line, numPrevLines + numLines);
   }
 
   // this is the line number in the original source using a modified/step data line number
-  private getOriginalLine(newLine: number): number {
+  private getOriginalLine(newLine: number, lineOffsets: Map<number, number> = this._lineOffsets): number {
     let originalLine = newLine;
 
-    this._lineOffsets.forEach((line, numLines) => {
+    lineOffsets.forEach((numLines, line) => {
       if (newLine >= line) {
         originalLine -= numLines;
       }
@@ -923,10 +954,10 @@ function ` + functionName + `(` + argsString + `) {
   }
 
   // this is the line number in the modified source using an original line number
-  private getNewLine(originalLine: number): number {
+  private getNewLine(originalLine: number, lineOffsets: Map<number, number> = this._lineOffsets): number {
     let newLine = originalLine;
 
-    this._lineOffsets.forEach((line, numLines) => {
+    lineOffsets.forEach((numLines, line) => {
       if (originalLine >= line) {
         newLine += numLines;
       }
