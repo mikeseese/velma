@@ -28,6 +28,15 @@ export function GetFunctionProgramCount(bytecode, methodId) {
   }
 }
 
+export interface SdbStepData {
+  debuggerMessageId: any;
+  source: any;
+  location: any;
+  contractAddress: string;
+  vmData: any;
+  scope: number[];
+}
+
 export interface SdbBreakpoint {
   id: number;
   line: number;
@@ -56,6 +65,11 @@ export interface SdbExpressionFunction {
   argsString: string;
   reference: string;
   code: string;
+}
+
+export interface SdbEvaluation {
+  functionName: string;
+  callback: Function;
 }
 
 function adjustBreakpointLineNumbers(breakpoints: Map<string, SdbBreakpoint[]>, path: string, startLine: number, numLines: number): void {
@@ -95,10 +109,10 @@ export class LibSdb extends EventEmitter {
 
   private _compilationResult: any;
 
-  private _stepData: any;
+  private _stepData: SdbStepData | null;
 
-  private _priorStepData: any | null;
-  private _priorUiStepData: any | null;
+  private _priorStepData: SdbStepData | null;
+  private _priorUiStepData: SdbStepData | null;
 
   private _callStack: SdbStackFrame[];
   private _priorUiCallStack: SdbStackFrame[] | null;
@@ -106,6 +120,8 @@ export class LibSdb extends EventEmitter {
   private _variables: Map<number, Map<string, SdbVariable>>;
 
   private _lineOffsets: Map<number, number>;
+
+  private _ongoingEvaluation: SdbEvaluation | null;
 
   constructor() {
     super();
@@ -119,6 +135,7 @@ export class LibSdb extends EventEmitter {
     this._priorUiStepData = null;
     this._variables = new Map<number, Map<string, SdbVariable>>();
     this._lineOffsets = new Map<number, number>();
+    this._ongoingEvaluation = null;
   }
   
   private contractsChanged(data: any) {
@@ -129,14 +146,14 @@ export class LibSdb extends EventEmitter {
     let contracts = this._compilationResult.contracts;
     Object.keys(contracts).forEach((key) => {
       if(contracts[key].sourcePath !== null) {
-        contracts[key].pcMap = code.util.nameOpCodes(new Buffer(contracts[key].runtimeBytecode.substring(2), 'hex'))[1];
+        contracts[key].pcMap = code.util.nameOpCodes(new Buffer(contracts[key].runtimeBytecode, 'hex'))[1];
 
-        contracts[key].sourceCode = readFileSync(contracts[key].sourcePath).toString();
+        contracts[key].sourceCode = readFileSync(contracts[key].sourcePath, "utf8");
         contracts[key].lineBreaks = sourceMappingDecoder.getLinebreakPositions(contracts[key].sourceCode);
 
         contracts[key].functionNames = {};
         Object.keys(contracts[key].functionHashes).forEach((functionName) => {
-          const pc = GetFunctionProgramCount(contracts[key].bytecode, contracts[key].functionHashes[functionName]);
+          const pc = GetFunctionProgramCount(contracts[key].runtimeBytecode, contracts[key].functionHashes[functionName]);
           if (pc !== null) {
             contracts[key].functionNames[pc] = functionName;
           }
@@ -192,7 +209,7 @@ export class LibSdb extends EventEmitter {
 
   private vmStepped(data: any) {
     // step through code
-    const pc = data.content.pc - 1;
+    const pc = data.content.pc;
     const address = (new Buffer(data.content.address.data)).toString("hex");
     
     /*if (!(address in this._contracts)) {
@@ -208,12 +225,13 @@ export class LibSdb extends EventEmitter {
     }*/
 
     if(typeof this._compilationResult === "undefined" || typeof this._compilationResult.contracts === "undefined") {
-      this._stepData = {
-        "debuggerMessageId": data.id,
-        "source": null,
-        "location": null,
-        "contractAddress": address,
-        "vmData": data.content
+      this._stepData = <SdbStepData> {
+        debuggerMessageId: data.id,
+        source: null,
+        location: null,
+        contractAddress: address,
+        vmData: data.content,
+        scope: []
       };
       this.respondToDebugHook();
     }
@@ -241,12 +259,26 @@ export class LibSdb extends EventEmitter {
           this._callStack.unshift(frame);
         }
         else if (this._priorStepData.source.jump === "o") {
-          // jump out
+          // jump out, we should be at a JUMPDEST currently
+          const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, this._compilationResult.sources["DebugContract.sol"]);
+          const functionName = node.attributes.name;
+          if (this._ongoingEvaluation !== null && this._ongoingEvaluation.functionName === functionName) {
+            // get variable at top of stack
+            // TODO: add support for multiple variable evaluations
+
+            const buf = new Buffer(data.content.stack[data.content.stack.length - 1].data);
+            const num = new BigNumber("0x" + buf.toString("hex"));
+
+            this._ongoingEvaluation.callback(num.toString());
+
+            this._ongoingEvaluation = null;
+          }
+
           this._callStack.shift();
         }
         else if (pc in contract.functionNames) {
           // jump in to external function
-          // this is the JUMPDEST of a function we just entered
+          // this is the JUMPDEST of a function we just entered mike is cute
 
           // TODO: figure this out
           // const functionName = contract.functionNames[pc];
@@ -261,7 +293,7 @@ export class LibSdb extends EventEmitter {
       }
 
       // find current scope
-      const currentScope = this.findScope(index);
+      const currentScope = this.findScope(sourceLocation.start);
 
       // is there a variable declaration here?
       if (sourceLocation) {
@@ -279,13 +311,13 @@ export class LibSdb extends EventEmitter {
         }
       }
 
-      this._stepData = {
-        "debuggerMessageId": data.id,
-        "source": sourceLocation,
-        "location": currentLocation,
-        "contractAddress": address,
-        "vmData": data.content,
-        "scope": currentScope
+      this._stepData = <SdbStepData> {
+        debuggerMessageId: data.id,
+        source: sourceLocation,
+        location: currentLocation,
+        contractAddress: address,
+        vmData: data.content,
+        scope: currentScope
       };
 
       this.sendEvent("step");
@@ -381,15 +413,17 @@ export class LibSdb extends EventEmitter {
   public stack(startFrame: number, endFrame: number): any {
     const frames = new Array<any>();
 
-    const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, this._compilationResult.sources["DebugContract.sol"]);
-    const functionName = node.attributes.name;
-    if (startFrame === 0 && this._stepData.location && this._stepData.location.start) {
-      frames.push({
-        "index": startFrame,
-        "name": functionName,
-        "file": this._compilationResult.contracts["DebugContract.sol:DebugContract"].sourcePath,
-        "line": this.getOriginalLine(this._stepData.location.start.line)
-      });
+    if (this._stepData !== null) {
+      const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, this._compilationResult.sources["DebugContract.sol"]);
+      const functionName = node.attributes.name;
+      if (startFrame === 0 && this._stepData.location && this._stepData.location.start) {
+        frames.push({
+          "index": startFrame,
+          "name": functionName,
+          "file": this._compilationResult.contracts["DebugContract.sol:DebugContract"].sourcePath,
+          "line": this.getOriginalLine(this._stepData.location.start.line)
+        });
+      }
     }
 
     for (let i = startFrame; i < Math.min(endFrame, this._callStack.length); i++) {
@@ -410,24 +444,26 @@ export class LibSdb extends EventEmitter {
   public variables(): any[] {
     let variables: any[] = [];
 
-    const stack = this._stepData.vmData.stack;
-    for (let i = 0; i < this._stepData.scope.length; i++) {
-      const scope = this._stepData.scope[i];
-      const scopeVars = this._variables[scope];
-      const names = Object.keys(scopeVars);
-      for (let j = 0; j < names.length; j++) {
-        const name = names[j];
-        if (typeof scopeVars[name] === "object" &&
-            "position" in scopeVars[name] &&
-            scopeVars[name].position !== null && stack.length > scopeVars[name].position) {
-          const buf = new Buffer(stack[scopeVars[name].position].data);
-          const num = new BigNumber("0x" + buf.toString("hex"));
-          variables.push({
-            name: name,
-            type: scopeVars[name].type,
-            value: num.toString(),
-            variablesReference: 0
-          });
+    if (this._stepData !== null) {
+      const stack = this._stepData.vmData.stack;
+      for (let i = 0; i < this._stepData.scope.length; i++) {
+        const scope = this._stepData.scope[i];
+        const scopeVars = this._variables[scope];
+        const names = Object.keys(scopeVars);
+        for (let j = 0; j < names.length; j++) {
+          const name = names[j];
+          if (typeof scopeVars[name] === "object" &&
+              "position" in scopeVars[name] &&
+              scopeVars[name].position !== null && stack.length > scopeVars[name].position) {
+            const buf = new Buffer(stack[scopeVars[name].position].data);
+            const num = new BigNumber("0x" + buf.toString("hex"));
+            variables.push({
+              name: name,
+              type: scopeVars[name].type,
+              value: num.toString(),
+              variablesReference: 0
+            });
+          }
         }
       }
     }
@@ -591,7 +627,7 @@ export class LibSdb extends EventEmitter {
     }
 
     const ln = this._stepData.location.start.line;
-    console.log(ln);
+    console.log(this._stepData.vmData.pc + " - " + ln + " - " + JSON.stringify(this._stepData.vmData.opcode));
 
     if (this._priorUiCallStack && this._priorUiStepData) {
       const callDepthChange = this._callStack.length - this._priorUiCallStack.length;
@@ -661,37 +697,40 @@ export class LibSdb extends EventEmitter {
 
   private findArguments(frameId: number | undefined, expression: string): SdbVariable[] {
     let variables: SdbVariable[] = [];
-    const result = parseExpression(expression, "solidity-expression");
 
-    let identifiers = traverse(result.body).reduce((acc, x) => {
-      if (typeof x === "object" && "type" in x && x.type === "Identifier") {
-        acc.push(x);
-      }
-      return acc;
-    });
-    identifiers.shift(); // TODO: remove root node?
+    if (this._stepData !== null) {
+      const result = parseExpression(expression, "solidity-expression");
 
-    let allVariables: Map<string, SdbVariable> = new Map<string, SdbVariable>();
-    for (let i = 0; i < this._stepData.scope.length; i++) {
-      const scope = this._stepData.scope[i];
-      const scopeVars = this._variables[scope];
-      const names = Object.keys(scopeVars);
-      for (let j = 0; j < names.length; j++) {
-        const name = names[j];
-        if (typeof scopeVars[name] === "object" &&
-            "position" in scopeVars[name] &&
-            scopeVars[name].position !== null) {
-          allVariables[name] = scopeVars[name];
+      let identifiers = traverse(result.body).reduce((acc, x) => {
+        if (typeof x === "object" && "type" in x && x.type === "Identifier") {
+          acc.push(x);
+        }
+        return acc;
+      });
+      identifiers.shift(); // TODO: remove root node?
+
+      let allVariables: Map<string, SdbVariable> = new Map<string, SdbVariable>();
+      for (let i = 0; i < this._stepData.scope.length; i++) {
+        const scope = this._stepData.scope[i];
+        const scopeVars = this._variables[scope];
+        const names = Object.keys(scopeVars);
+        for (let j = 0; j < names.length; j++) {
+          const name = names[j];
+          if (typeof scopeVars[name] === "object" &&
+              "position" in scopeVars[name] &&
+              scopeVars[name].position !== null) {
+            allVariables[name] = scopeVars[name];
+          }
         }
       }
-    }
 
-    for (let i = 0; i < identifiers.length; i++) {
-      if (identifiers[i].name in allVariables) {
-        variables.push(allVariables[identifiers[i].name]);
-      }
-      else {
-        // woah, we don't know that identifier/variable. error?
+      for (let i = 0; i < identifiers.length; i++) {
+        if (identifiers[i].name in allVariables) {
+          variables.push(allVariables[identifiers[i].name]);
+        }
+        else {
+          // woah, we don't know that identifier/variable. error?
+        }
       }
     }
 
@@ -731,7 +770,17 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
   }
 
   public evaluate(expression: string, context: string | undefined, frameId: number | undefined, callback) {
+    if (this._stepData === null) {
+      return;
+    }
+
     if (context === "hover") {
+      // TODO: implement this
+      return;
+    }
+
+    if (this._ongoingEvaluation !== null) {
+      // TODO: improve this
       return;
     }
 
@@ -827,6 +876,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
               const refString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (bool)`;
               const repString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (` + match[1] + `)`;
               newContract.sourceCode = newContract.sourceCode.replace(refString, repString);
+              newContract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newContract.sourceCode);
               result = compile(newContract.sourceCode, 0);
             }
             else {
@@ -848,19 +898,37 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
           newContract.srcmapRuntime = compiledContract.srcmapRuntime;
 
           // add our flair
-          newContract.pcMap = code.util.nameOpCodes(new Buffer(newContract.runtimeBytecode.substring(2), 'hex'))[1];
+          newContract.pcMap = code.util.nameOpCodes(new Buffer(newContract.runtimeBytecode, 'hex'))[1];
           newContract.functionNames = {};
           Object.keys(newContract.functionHashes).forEach((functionName) => {
-            const pc = GetFunctionProgramCount(newContract.bytecode, newContract.functionHashes[functionName]);
+            const pc = GetFunctionProgramCount(newContract.runtimeBytecode, newContract.functionHashes[functionName]);
             if (pc !== null) {
               newContract.functionNames[pc] = functionName;
             }
+          });
+          
+          const astWalker = new util.AstWalker();
+          let newVariables = new Map<number, Map<string, SdbVariable>>();
+          astWalker.walk(result.sources[""].AST, (node) => {
+            if (node.id) {
+              newVariables[node.id] = new Map<string, SdbVariable>();
+              if (node.name === "VariableDeclaration") {
+                const variable = <SdbVariable> {
+                  name: node.attributes.name,
+                  type: node.attributes.type,
+                  scope: node.attributes.scope,
+                  position: null
+                };
+                newVariables[variable.scope][variable.name] = variable;
+              }
+            }
+      
+            return true;
           });
 
           const codeOffset = functionInsert.code.length + functionInsert.reference.length + 1; // 1 is for the \n after the reference insertion
 
           let sourceLocationEvalFunction = null;
-          const astWalker = new util.AstWalker();
           astWalker.walk(result.sources[""].AST, (node) => {
             if (sourceLocationEvalFunction !== null) {
               return false;
@@ -908,6 +976,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
           this._callStack = newCallstack;
           this._priorUiCallStack = newPriorUiCallstack;
           this._lineOffsets = newLineOffsets;
+          this._variables = newVariables;
 
           if (newLine !== null) {
             this.setBreakPoint(newContract.sourcePath, newLine, false, false);
@@ -917,11 +986,13 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
             console.log("ERROR: We could not find the line of after we're evaluating...but we're going to execute anyway? shrug");
           }
 
-          this.on("evalResponse", function handler(this: LibSdb, response) {
-            this.removeListener("evalResponse", handler)
-            callback(response);
-          });
-          
+          this._ongoingEvaluation = <SdbEvaluation> {
+            functionName: functionInsert.name,
+            callback: (result) => {
+              callback(result);
+            }
+          };
+
           // push the code
           const content = {
             "type": "putCodeRequest",
