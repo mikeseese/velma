@@ -34,7 +34,7 @@ export interface SdbStepData {
   location: any;
   contractAddress: string;
   vmData: any;
-  scope: number[];
+  scope: SdbAstScope[];
 }
 
 export interface SdbBreakpoint {
@@ -52,11 +52,17 @@ export interface SdbStackFrame {
   pc: number;
 }
 
+export interface SdbAstScope {
+  id: number; // id provided by compiler
+  childIndex: number | null; // index in parent's 'children' array, null if root node
+  depth: number;
+}
+
 export interface SdbVariable {
   name: string;
   type: string;
-  scope: number;
-  position: number | null;
+  scope: SdbAstScope;
+  stackPosition: number | null;
 }
 
 export interface SdbExpressionFunction {
@@ -164,15 +170,22 @@ export class LibSdb extends EventEmitter {
     const astWalker = new util.AstWalker();
     astWalker.walk(this._compilationResult.sources["DebugContract.sol"].AST, (node) => {
       if (node.id) {
-        this._variables[node.id] = new Map<string, SdbVariable>();
+        // this is a new scope, add to map
+        this._variables.set(node.id, new Map<string, SdbVariable>());
+
         if (node.name === "VariableDeclaration") {
+          // this is a variable part of the parent's scope
           const variable = <SdbVariable> {
             name: node.attributes.name,
             type: node.attributes.type,
-            scope: node.attributes.scope,
-            position: null
+            scope: <SdbAstScope> {
+              id: node.attributes.scope,
+              childIndex: 0,
+              depth: 0
+            },
+            stackPosition: null
           };
-          this._variables[variable.scope][variable.name] = variable;
+          this._variables.get(variable.scope.id)!.set(variable.name, variable);
         }
       }
 
@@ -188,15 +201,19 @@ export class LibSdb extends EventEmitter {
     this._socket.write(CircularJSON.stringify(response));
   }
 
-  private findScope(index: number): number[] {
-    let scope: number[] = [];
+  private findScope(index: number): SdbAstScope[] {
+    let scope: SdbAstScope[] = [];
     const ast = this._compilationResult.sources["DebugContract.sol"].AST;
 
     const astWalker = new util.AstWalker();
     astWalker.walk(ast, (node) => {
       const src = node.src.split(":").map((s) => { return parseInt(s); });
       if (src.length >= 2 && src[0] <= index && index <= src[0] + src[1]) {
-        scope.unshift(node.id);
+        scope.unshift(<SdbAstScope> {
+          id: node.id,
+          childIndex: 0,
+          depth: 0
+        });
         return true;
       }
       else {
@@ -300,11 +317,10 @@ export class LibSdb extends EventEmitter {
         const variableDeclarationNode = sourceMappingDecoder.findNodeAtSourceLocation("VariableDeclaration", sourceLocation, this._compilationResult.sources["DebugContract.sol"]);
         if (variableDeclarationNode) {
           const scope = variableDeclarationNode.attributes.scope;
-          const names = Object.keys(this._variables[scope]);
-          for (let i = 0; i < names.length; i++) {
-            const name = names[i];
+          const names = this._variables.get(scope)!.keys();
+          for (const name of names) {
             if (name === variableDeclarationNode.attributes.name) {
-              this._variables[scope][name].position = data.content.stack.length
+              this._variables.get(scope)!.get(name)!.stackPosition = data.content.stack.length
               break;
             }
           }
@@ -448,18 +464,16 @@ export class LibSdb extends EventEmitter {
       const stack = this._stepData.vmData.stack;
       for (let i = 0; i < this._stepData.scope.length; i++) {
         const scope = this._stepData.scope[i];
-        const scopeVars = this._variables[scope];
-        const names = Object.keys(scopeVars);
-        for (let j = 0; j < names.length; j++) {
-          const name = names[j];
-          if (typeof scopeVars[name] === "object" &&
-              "position" in scopeVars[name] &&
-              scopeVars[name].position !== null && stack.length > scopeVars[name].position) {
-            const buf = new Buffer(stack[scopeVars[name].position].data);
+        const scopeVars = this._variables.get(scope.id)!;
+        const names = scopeVars.keys();
+        for (const name of names) {
+          const variable = scopeVars.get(name);
+          if (variable && variable.stackPosition !== null && stack.length > variable.stackPosition) {
+            const buf = new Buffer(stack[variable.stackPosition].data);
             const num = new BigNumber("0x" + buf.toString("hex"));
             variables.push({
               name: name,
-              type: scopeVars[name].type,
+              type: variable.type,
               value: num.toString(),
               variablesReference: 0
             });
@@ -712,21 +726,19 @@ export class LibSdb extends EventEmitter {
       let allVariables: Map<string, SdbVariable> = new Map<string, SdbVariable>();
       for (let i = 0; i < this._stepData.scope.length; i++) {
         const scope = this._stepData.scope[i];
-        const scopeVars = this._variables[scope];
-        const names = Object.keys(scopeVars);
-        for (let j = 0; j < names.length; j++) {
-          const name = names[j];
-          if (typeof scopeVars[name] === "object" &&
-              "position" in scopeVars[name] &&
-              scopeVars[name].position !== null) {
-            allVariables[name] = scopeVars[name];
+        const scopeVars = this._variables.get(scope.id)!;
+        const names = scopeVars.keys();
+        for (const name of names) {
+          const variable = scopeVars.get(name);
+          if (variable && variable.stackPosition !== null) {
+            allVariables.set(name, variable);
           }
         }
       }
 
       for (let i = 0; i < identifiers.length; i++) {
-        if (identifiers[i].name in allVariables) {
-          variables.push(allVariables[identifiers[i].name]);
+        if (identifiers[i].name in allVariables.values()) {
+          variables.push(allVariables.get(identifiers[i].name)!);
         }
         else {
           // woah, we don't know that identifier/variable. error?
@@ -911,15 +923,20 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
           let newVariables = new Map<number, Map<string, SdbVariable>>();
           astWalker.walk(result.sources[""].AST, (node) => {
             if (node.id) {
-              newVariables[node.id] = new Map<string, SdbVariable>();
+              newVariables.set(node.id, new Map<string, SdbVariable>());
               if (node.name === "VariableDeclaration") {
+                //node.attributes.name
                 const variable = <SdbVariable> {
                   name: node.attributes.name,
                   type: node.attributes.type,
-                  scope: node.attributes.scope,
-                  position: null
+                  scope: <SdbAstScope> {
+                    id: node.attributes.scope,
+                    childIndex: 0,
+                    depth: 0
+                  },
+                  stackPosition: null
                 };
-                newVariables[variable.scope][variable.name] = variable;
+                newVariables.get(variable.scope.id)!.set(variable.name, variable);
               }
             }
       
@@ -938,7 +955,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
               for (let i = 0; i < node.children.length; i++) {
                 if (node.children[i].attributes.value === functionInsert.name) {
                   sourceLocationEvalFunction = sourceMappingDecoder.sourceLocationFromAstNode(node);
-                  return false;
+                  return true;
                 }
               }
             }
