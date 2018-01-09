@@ -168,23 +168,34 @@ export class LibSdb extends EventEmitter {
     });
 
     const astWalker = new util.AstWalker();
-    astWalker.walk(this._compilationResult.sources["DebugContract.sol"].AST, (node) => {
+    astWalker.walkDetail(this._compilationResult.sources["DebugContract.sol"].AST, null, 0, (node, parent, depth) => {
       if (node.id) {
         // this is a new scope, add to map
         this._variables.set(node.id, new Map<string, SdbVariable>());
 
         if (node.name === "VariableDeclaration") {
-          // this is a variable part of the parent's scope
+          let childIndex: number | null = null;
+          if (parent) {
+            // look for the child in the parent to get the index
+            for (let i = 0; i < parent.children.length; i++) {
+              if (parent.children[i].id === node.id) {
+                childIndex = i;
+              }
+            }
+          }
+
           const variable = <SdbVariable> {
             name: node.attributes.name,
             type: node.attributes.type,
             scope: <SdbAstScope> {
               id: node.attributes.scope,
-              childIndex: 0,
-              depth: 0
+              childIndex: childIndex,
+              depth: depth
             },
             stackPosition: null
           };
+
+          // add the variable to the parent's scope
           this._variables.get(variable.scope.id)!.set(variable.name, variable);
         }
       }
@@ -206,13 +217,22 @@ export class LibSdb extends EventEmitter {
     const ast = this._compilationResult.sources["DebugContract.sol"].AST;
 
     const astWalker = new util.AstWalker();
-    astWalker.walk(ast, (node) => {
+    astWalker.walkDetail(ast, null, 0, (node, parent, depth) => {
       const src = node.src.split(":").map((s) => { return parseInt(s); });
       if (src.length >= 2 && src[0] <= index && index <= src[0] + src[1]) {
+        let childIndex: number | null = null;
+        if (parent) {
+          // look for the child in the parent to get the index
+          for (let i = 0; i < parent.children.length; i++) {
+            if (parent.children[i].id === node.id) {
+              childIndex = i;
+            }
+          }
+        }
         scope.unshift(<SdbAstScope> {
           id: node.id,
-          childIndex: 0,
-          depth: 0
+          childIndex: childIndex,
+          depth: depth
         });
         return true;
       }
@@ -317,11 +337,14 @@ export class LibSdb extends EventEmitter {
         const variableDeclarationNode = sourceMappingDecoder.findNodeAtSourceLocation("VariableDeclaration", sourceLocation, this._compilationResult.sources["DebugContract.sol"]);
         if (variableDeclarationNode) {
           const scope = variableDeclarationNode.attributes.scope;
-          const names = this._variables.get(scope)!.keys();
-          for (const name of names) {
-            if (name === variableDeclarationNode.attributes.name) {
-              this._variables.get(scope)!.get(name)!.stackPosition = data.content.stack.length
-              break;
+          const variables = this._variables.get(scope);
+          if (variables) {
+            const names = variables.keys();
+            for (const name of names) {
+              if (name === variableDeclarationNode.attributes.name) {
+                variables.get(name)!.stackPosition = data.content.stack.length
+                break;
+              }
             }
           }
         }
@@ -500,7 +523,9 @@ export class LibSdb extends EventEmitter {
       bps = new Array<SdbBreakpoint>();
       this._breakPoints.set(path, bps);
     }
-    bps.push(bp);
+    if (bps.indexOf(bp) === -1) {
+      bps.push(bp);
+    }
 
     this.verifyBreakpoints(path);
 
@@ -737,7 +762,7 @@ export class LibSdb extends EventEmitter {
       }
 
       for (let i = 0; i < identifiers.length; i++) {
-        if (identifiers[i].name in allVariables.values()) {
+        if (allVariables.has(identifiers[i].name)) {
           variables.push(allVariables.get(identifiers[i].name)!);
         }
         else {
@@ -921,25 +946,46 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
           
           const astWalker = new util.AstWalker();
           let newVariables = new Map<number, Map<string, SdbVariable>>();
-          astWalker.walk(result.sources[""].AST, (node) => {
+          astWalker.walkDetail(result.sources[""].AST, null, 0, (node, parent, depth) => {
             if (node.id) {
               newVariables.set(node.id, new Map<string, SdbVariable>());
+
               if (node.name === "VariableDeclaration") {
-                //node.attributes.name
+                let childIndex: number | null = null;
+                if (parent) {
+                  // look for the child in the parent to get the index
+                  for (let i = 0; i < parent.children.length; i++) {
+                    if (parent.children[i].id === node.id) {
+                      childIndex = i;
+                    }
+                  }
+                }
+
+                // try to find the variable in our prior variable to get the stack position (which shouldn't have changed)
+                let stackPosition: number | null = null;
+                this._variables.forEach((variables, scopeId) => {
+                  const variable = variables.get(node.attributes.name);
+                  if (variable && variable.scope.depth === depth) {
+                    stackPosition = variable.stackPosition;
+                  }
+                });
+
                 const variable = <SdbVariable> {
                   name: node.attributes.name,
                   type: node.attributes.type,
                   scope: <SdbAstScope> {
                     id: node.attributes.scope,
-                    childIndex: 0,
-                    depth: 0
+                    childIndex: childIndex,
+                    depth: depth
                   },
-                  stackPosition: null
+                  stackPosition: stackPosition
                 };
+
+                // add variable to the parent's scope
                 newVariables.get(variable.scope.id)!.set(variable.name, variable);
               }
             }
-      
+
             return true;
           });
 
