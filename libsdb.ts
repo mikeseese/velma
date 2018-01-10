@@ -78,6 +78,23 @@ export interface SdbEvaluation {
   callback: Function;
 }
 
+export type SdbVariableName = string;
+export type SdbVariableMap = Map<SdbVariableName, SdbVariable>;
+export type SdbScopeVariableMap = Map<SdbAstScope, SdbVariableMap>;
+
+export interface SdbContract {
+  name: string;
+  scopeVariableMap: SdbScopeVariableMap;
+}
+
+export interface SdbFile {
+  path: string;
+  name: string;
+  contracts: SdbContract[];
+  breakpoints: SdbBreakpoint[];
+  lineOffsets: Map<number, number>; // key: line number, value: number of lines
+}
+
 function adjustBreakpointLineNumbers(breakpoints: Map<string, SdbBreakpoint[]>, path: string, startLine: number, numLines: number): void {
   let bps = breakpoints.get(path);
   if (bps) {
@@ -105,7 +122,7 @@ const matchReturnTypeFromError = message => message.match(regexpReturnError);
 export class LibSdb extends EventEmitter {
 
   // maps from sourceFile to array of Mock breakpoints
-  private _breakPoints: Map<string, SdbBreakpoint[]>;
+  private _breakPoints: Map<string, SdbBreakpoint[]>; // TODO: per file
 
   // since we want to send breakpoint events, we will assign an id to every event
   // so that the frontend can match events with breakpoints.
@@ -123,9 +140,9 @@ export class LibSdb extends EventEmitter {
   private _callStack: SdbStackFrame[];
   private _priorUiCallStack: SdbStackFrame[] | null;
 
-  private _variables: Map<number, Map<string, SdbVariable>>;
+  private _variables: SdbScopeVariableMap; // TODO: per file
 
-  private _lineOffsets: Map<number, number>;
+  private _lineOffsets: Map<number, number>; // TODO: per file
 
   private _ongoingEvaluation: SdbEvaluation | null;
 
@@ -139,7 +156,7 @@ export class LibSdb extends EventEmitter {
     this._callStack = [];
     this._priorUiCallStack = [];
     this._priorUiStepData = null;
-    this._variables = new Map<number, Map<string, SdbVariable>>();
+    this._variables = new Map<SdbAstScope, SdbVariableMap>();
     this._lineOffsets = new Map<number, number>();
     this._ongoingEvaluation = null;
   }
@@ -196,7 +213,7 @@ export class LibSdb extends EventEmitter {
           };
 
           // add the variable to the parent's scope
-          this._variables.get(variable.scope.id)!.set(variable.name, variable);
+          this._variables.get(variable.scope)!.set(variable.name, variable);
         }
       }
 
@@ -487,7 +504,7 @@ export class LibSdb extends EventEmitter {
       const stack = this._stepData.vmData.stack;
       for (let i = 0; i < this._stepData.scope.length; i++) {
         const scope = this._stepData.scope[i];
-        const scopeVars = this._variables.get(scope.id)!;
+        const scopeVars = this._variables.get(scope)!;
         const names = scopeVars.keys();
         for (const name of names) {
           const variable = scopeVars.get(name);
@@ -748,7 +765,7 @@ export class LibSdb extends EventEmitter {
       });
       identifiers.shift(); // TODO: remove root node?
 
-      let allVariables: Map<string, SdbVariable> = new Map<string, SdbVariable>();
+      let allVariables: SdbVariableMap = new SdbVariableMap();
       for (let i = 0; i < this._stepData.scope.length; i++) {
         const scope = this._stepData.scope[i];
         const scopeVars = this._variables.get(scope.id)!;
@@ -766,7 +783,7 @@ export class LibSdb extends EventEmitter {
           variables.push(allVariables.get(identifiers[i].name)!);
         }
         else {
-          // woah, we don't know that identifier/variable. error?
+          // TODO: woah, we don't know that identifier/variable. error?
         }
       }
     }
@@ -945,7 +962,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
           });
           
           const astWalker = new util.AstWalker();
-          let newVariables = new Map<number, Map<string, SdbVariable>>();
+          let newVariables = new Map<SdbAstScope, SdbVariableMap>();
           astWalker.walkDetail(result.sources[""].AST, null, 0, (node, parent, depth) => {
             if (node.id) {
               newVariables.set(node.id, new Map<string, SdbVariable>());
@@ -982,7 +999,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                 };
 
                 // add variable to the parent's scope
-                newVariables.get(variable.scope.id)!.set(variable.name, variable);
+                newVariables.get(variable.scope)!.set(variable.name, variable);
               }
             }
 
