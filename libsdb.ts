@@ -130,13 +130,10 @@ export class SdbFile {
 
 export type SdbFileMap = Map<string, SdbFile>; // key is full path/name of file
 
-function adjustBreakpointLineNumbers(breakpoints: Map<string, SdbBreakpoint[]>, path: string, startLine: number, numLines: number): void {
-  let bps = breakpoints.get(path);
-  if (bps) {
-    for (let i = 0; i < bps.length; i++) {
-      if (bps[i].line >= startLine) {
-        bps[i].line += numLines;
-      }
+function adjustBreakpointLineNumbers(breakpoints: SdbBreakpoint[], path: string, startLine: number, numLines: number): void {
+  for (let i = 0; i < breakpoints.length; i++) {
+    if (breakpoints[i].line >= startLine) {
+      breakpoints[i].line += numLines;
     }
   }
 };
@@ -224,7 +221,8 @@ export class LibSdb extends EventEmitter {
 
         let sdbContract = new SdbContract();
 
-        sdbContract.name = key;
+        let contractName = key.split(":");
+        sdbContract.name = contractName[contractName.length - 1];
         sdbContract.sourcePath = contract.sourcePath;
 
         sdbContract.pcMap = code.util.nameOpCodes(new Buffer(contract.runtimeBytecode, 'hex'))[1];
@@ -340,7 +338,7 @@ export class LibSdb extends EventEmitter {
 
   private findScope(index: number): SdbAstScope[] {
     let scope: SdbAstScope[] = [];
-    const ast = this._compilationResult.sources["DebugContract.sol"].AST;
+    const ast = this._compilationResult.sources["DebugContract.sol"].AST; // TODO: fixme
 
     const astWalker = new util.AstWalker();
     astWalker.walkDetail(ast, null, 0, (node, parent, depth) => {
@@ -399,19 +397,33 @@ export class LibSdb extends EventEmitter {
       this.respondToDebugHook();
     }
     else {
-      const contract = this._compilationResult.contracts[this._compilationResult.contractMap[address]];
+      const contract = this._contracts.get(address);
+
+      if(!contract) {
+        // TODO: EEK HELP
+        console.error("OIDJFOIJS fixme");
+        return;
+      }
+
+      const file = this._files.get(contract.sourcePath);
+
+      if(!file) {
+        // TODO: EEK HELP
+        console.error("OIDJFOIJS fixme");
+        return;
+      }
 
       // get line number from pc
-      const index = contract.pcMap[pc];
+      const index = contract.pcMap.get(pc) || null;
       const sourceLocation = sourceMappingDecoder.atIndex(index, contract.srcmapRuntime);
-      const currentLocation = sourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, contract.lineBreaks);
+      const currentLocation = sourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, file.lineBreaks);
 
       if (this._priorStepData && this._priorStepData.source) {
         if (this._priorStepData.source.jump === "i") {
           // jump in
 
           // push the prior function onto the stack. the current location for stack goes on when requested
-          const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, this._compilationResult.sources["DebugContract.sol"]);
+          const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
           const functionName = node.attributes.name;
           const frame = <SdbStackFrame> {
             name: functionName,
@@ -423,7 +435,7 @@ export class LibSdb extends EventEmitter {
         }
         else if (this._priorStepData.source.jump === "o") {
           // jump out, we should be at a JUMPDEST currently
-          const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, this._compilationResult.sources["DebugContract.sol"]);
+          const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
           const functionName = node.attributes.name;
           if (this._ongoingEvaluation !== null && this._ongoingEvaluation.functionName === functionName) {
             // get variable at top of stack
@@ -460,10 +472,10 @@ export class LibSdb extends EventEmitter {
 
       // is there a variable declaration here?
       if (sourceLocation) {
-        const variableDeclarationNode = sourceMappingDecoder.findNodeAtSourceLocation("VariableDeclaration", sourceLocation, this._compilationResult.sources["DebugContract.sol"]);
+        const variableDeclarationNode = sourceMappingDecoder.findNodeAtSourceLocation("VariableDeclaration", sourceLocation, { AST: contract.ast });
         if (variableDeclarationNode) {
           const scope = variableDeclarationNode.attributes.scope;
-          const variables = this._variables.get(scope);
+          const variables = contract.scopeVariableMap.get(scope);
           if (variables) {
             const names = variables.keys();
             for (const name of names) {
@@ -579,13 +591,14 @@ export class LibSdb extends EventEmitter {
     const frames = new Array<any>();
 
     if (this._stepData !== null) {
-      const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, this._compilationResult.sources["DebugContract.sol"]);
+      const contract = this._contracts.get(this._stepData.contractAddress)!;
+      const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, { AST: contract.ast });
       const functionName = node.attributes.name;
       if (startFrame === 0 && this._stepData.location && this._stepData.location.start) {
         frames.push({
           "index": startFrame,
           "name": functionName,
-          "file": this._compilationResult.contracts["DebugContract.sol:DebugContract"].sourcePath,
+          "file": contract.sourcePath,
           "line": this.getOriginalLine(this._stepData.location.start.line)
         });
       }
@@ -611,9 +624,10 @@ export class LibSdb extends EventEmitter {
 
     if (this._stepData !== null) {
       const stack = this._stepData.vmData.stack;
+      const contract = this._contracts.get(this._stepData.contractAddress)!;
       for (let i = 0; i < this._stepData.scope.length; i++) {
         const scope = this._stepData.scope[i];
-        const scopeVars = this._variables.get(scope)!;
+        const scopeVars = contract.scopeVariableMap.get(scope)!;
         const names = scopeVars.keys();
         for (const name of names) {
           const variable = scopeVars.get(name);
@@ -644,16 +658,15 @@ export class LibSdb extends EventEmitter {
     }
 
     const bp = <SdbBreakpoint> { verified: false, line, id: this._breakpointId++, visible: visible, originalSource: originalSource };
-    let bps = this._breakPoints.get(path);
-    if (!bps) {
-      bps = new Array<SdbBreakpoint>();
-      this._breakPoints.set(path, bps);
-    }
-    if (bps.indexOf(bp) === -1) {
-      bps.push(bp);
-    }
+    const file = this._files.get(path); // TODO: handle when file isn't in this._files
 
-    this.verifyBreakpoints(path);
+    if (file) {
+      if (file.breakpoints.indexOf(bp) === -1) {
+        file.breakpoints.push(bp);
+      }
+
+      this.verifyBreakpoints(path);
+    }
 
     return bp;
   }
@@ -662,15 +675,17 @@ export class LibSdb extends EventEmitter {
    * Clear breakpoint in file with given line.
    */
   public clearBreakPoint(path: string, line: number) : SdbBreakpoint | undefined {
-    let bps = this._breakPoints.get(path);
-    if (bps) {
-      const index = bps.findIndex(bp => bp.line === line);
+    const file = this._files.get(path); // TODO: handle when file isn't in this._files
+
+    if (file) {
+      const index = file.breakpoints.findIndex(bp => bp.line === line);
       if (index >= 0) {
-        const bp = bps[index];
-        bps.splice(index, 1);
+        const bp = file.breakpoints[index];
+        file.breakpoints.splice(index, 1);
         return bp;
       }
     }
+
     return undefined;
   }
 
@@ -678,7 +693,11 @@ export class LibSdb extends EventEmitter {
    * Clear all breakpoints for file.
    */
   public clearBreakpoints(path: string): void {
-    this._breakPoints.delete(path);
+    const file = this._files.get(path);
+
+    if (file) {
+      file.breakpoints = [];
+    }
   }
 
   // private methods
@@ -752,9 +771,10 @@ export class LibSdb extends EventEmitter {
   }
 
   private verifyBreakpoints(path: string) : void {
-    let bps = this._breakPoints.get(path);
-    if (bps) {
-      bps.forEach(bp => {
+    const file = this._files.get(path);
+
+    if (file) {
+      file.breakpoints.forEach(bp => {
         // Temporarily validate each breakpoint
         bp.verified = true;
         this.sendEvent('breakpointValidated', bp);
@@ -791,6 +811,8 @@ export class LibSdb extends EventEmitter {
       return false;
     }
 
+    const contract = this._contracts.get(this._stepData.contractAddress)!;
+    const file = this._files.get(contract.sourcePath)!;
     const ln = this._stepData.location.start.line;
     console.log(this._stepData.vmData.pc + " - " + ln + " - " + JSON.stringify(this._stepData.vmData.opcode));
 
@@ -805,7 +827,7 @@ export class LibSdb extends EventEmitter {
           }
           break;
         case "stopOnStepIn":
-          const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, this._compilationResult.sources["DebugContract.sol"]);
+          const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, { AST: contract.ast });
           if (callDepthChange > 0 && differentLine && node === null) {
             this.sendEvent("stopOnStepIn");
             return true;
@@ -834,26 +856,26 @@ export class LibSdb extends EventEmitter {
     // TODO: Stop on out of gas. I'd call that an exception
 
     // is there a breakpoint?
-    const breakpoints = this._breakPoints.get(this._compilationResult.contracts[this._compilationResult.contractMap[this._stepData.contractAddress]].sourcePath);
-    if (breakpoints) {
-      let priorLine = null;
-      if (this._priorUiStepData && this._priorUiStepData.location.start) {
-        priorLine = this._priorUiStepData.location.start.line;
-      }
-      const bps = breakpoints.filter(bp => bp.line === ln && (priorLine === null || ln !== priorLine));
-      if (bps.length > 0) {
+    let priorLine = null;
+    if (this._priorUiStepData && this._priorUiStepData.location.start) {
+      priorLine = this._priorUiStepData.location.start.line;
+    }
 
-        // send 'stopped' event
-        this.sendEvent('stopOnBreakpoint');
+    const bps = file.breakpoints.filter(bp => bp.line === ln && (priorLine === null || ln !== priorLine));
 
-        // the following shows the use of 'breakpoint' events to update properties of a breakpoint in the UI
-        // if breakpoint is not yet verified, verify it now and send a 'breakpoint' update event
-        if (!bps[0].verified) {
-          bps[0].verified = true;
-          this.sendEvent('breakpointValidated', bps[0]);
-        }
-        return true;
+    if (bps.length > 0) {
+      // send 'stopped' event
+      this.sendEvent('stopOnBreakpoint');
+
+      // the following shows the use of 'breakpoint' events to update properties of a breakpoint in the UI
+      // if breakpoint is not yet verified, verify it now and send a 'breakpoint' update event
+      if (!bps[0].verified) {
+        bps[0].verified = true;
+        this.sendEvent('breakpointValidated', bps[0]);
       }
+
+      // halt execution since we just hit a breakpoint
+      return true;
     }
 
     // nothing interesting found -> continue
@@ -874,10 +896,12 @@ export class LibSdb extends EventEmitter {
       });
       identifiers.shift(); // TODO: remove root node?
 
-      let allVariables: SdbVariableMap = new SdbVariableMap();
+      const contract = this._contracts.get(this._stepData.contractAddress)!;
+
+      let allVariables: SdbVariableMap = new Map<string, SdbVariable>();
       for (let i = 0; i < this._stepData.scope.length; i++) {
         const scope = this._stepData.scope[i];
-        const scopeVars = this._variables.get(scope.id)!;
+        const scopeVars = contract.scopeVariableMap.get(scope)!;
         const names = scopeVars.keys();
         for (const name of names) {
           const variable = scopeVars.get(name);
@@ -948,29 +972,23 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
     }
 
     expression = expression + (expression.endsWith(';') ? '' : ';');
-    const contractKey = this._compilationResult.contractMap[this._stepData.contractAddress];
-    let contractName = contractKey.split(":");
-    contractName = contractName[contractName.length - 1];
-    let contract = this._compilationResult.contracts[contractKey];
+    let contract = this._contracts[this._stepData.contractAddress];
     let newContract = CircularJSON.parse(CircularJSON.stringify(contract));
+    let file = this._files.get(contract.sourcePath)!;
 
     const functionArgs = this.findArguments(frameId, expression);
     const functionInsert = this.generateFunction(expression, functionArgs);
 
     let newLineOffsets = new Map<number, number>();
-    this._lineOffsets.forEach((value: number, key: number) => {
+    file.lineOffsets.forEach((value: number, key: number) => {
       newLineOffsets.set(key, value);
     });
 
-    let newBreakpoints: Map<string, SdbBreakpoint[]> = new Map<string, SdbBreakpoint[]>();
-    this._breakPoints.forEach((values: SdbBreakpoint[], key: string) => {
-      let copyValues: SdbBreakpoint[] = [];
-      for (let i = 0; i < values.length; i++) {
-        let copyValue = <SdbBreakpoint> { id: values[i].id, line: values[i].line, verified: values[i].verified, visible: values[i].visible };
-        copyValues.push(copyValue);
-      }
-      newBreakpoints.set(key, copyValues);
-    });
+    let newBreakpoints: SdbBreakpoint[] = [];
+    for (let i = 0; i < file.breakpoints.length; i++) {
+      let copyValue = <SdbBreakpoint> { id: file.breakpoints[i].id, line: file.breakpoints[i].line, verified: file.breakpoints[i].verified, visible: file.breakpoints[i].visible };
+      newBreakpoints.push(copyValue);
+    }
 
     let newCallstack: SdbStackFrame[] = [];
     for (let i = 0; i < this._callStack.length; i++) {
@@ -1006,7 +1024,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
           adjustCallstackLineNumbers(newPriorUiCallstack, newContract.sourcePath, currentLine, 1);
         }
 
-        const contractDeclarationPosition = newContract.sourceCode.indexOf("contract " + contractName);
+        const contractDeclarationPosition = newContract.sourceCode.indexOf("contract " + contract.name);
         let functionInsertPosition: number | null = null;
         let functionInsertLine: number | null = null;
         for (let i = 0; i < newContract.lineBreaks.length; i++) {
@@ -1089,7 +1107,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
 
                 // try to find the variable in our prior variable to get the stack position (which shouldn't have changed)
                 let stackPosition: number | null = null;
-                this._variables.forEach((variables, scopeId) => {
+                contract.scopeVariableMap.forEach((variables, scopeId) => {
                   const variable = variables.get(node.attributes.name);
                   if (variable && variable.scope.depth === depth) {
                     stackPosition = variable.stackPosition;
@@ -1157,15 +1175,36 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
             }
           }
 
-          // TODO: set this. variables to new stuff
-          this._compilationResult.errors = result.errors;
-          this._compilationResult.sources["DebugContract.sol"] = result.sources[""];
-          this._compilationResult.contracts[contractKey] = newContract;
-          this._breakPoints = newBreakpoints;
           this._callStack = newCallstack;
           this._priorUiCallStack = newPriorUiCallstack;
-          this._lineOffsets = newLineOffsets;
-          this._variables = newVariables;
+
+          file.breakpoints = newBreakpoints;
+          file.lineOffsets = newLineOffsets;
+          contract.scopeVariableMap = newVariables;
+
+          // TODO: FIGURE OUT WHETHER OR NOT WE NEED TO SET this._files and this._contracts back
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
+          // TODO:
 
           if (newLine !== null) {
             this.setBreakPoint(newContract.sourcePath, newLine, false, false);
