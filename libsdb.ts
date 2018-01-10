@@ -84,31 +84,47 @@ export type SdbScopeVariableMap = Map<SdbAstScope, SdbVariableMap>;
 
 export type SdbAst = any;
 
-export interface SdbContract {
+export class SdbContract {
   name: string;
   sourcePath: string;
-  address: string;
-  pcMap: any;
+  pcMap: Map<number, number>;
   scopeVariableMap: SdbScopeVariableMap;
-  functionHashes: any; // map<string, string>?
-  functionNames: any; // map<number, string>?
+  functionNames: Map<number, string>; // key: pc, value: hash
   bytecode: string;
   runtimeBytecode: string;
   srcmapRuntime: string;
-  srcmap: string;
+
+  constructor() {
+    this.pcMap = new Map<number, number>();
+    this.scopeVariableMap = new Map<SdbAstScope, SdbVariableMap>();
+    this.functionNames = new Map<number, string>();
+  }
 }
 
 export type SdbContractMap = Map<string, SdbContract>; // key is address
 
-export interface SdbFile {
-  path: string;
-  name: string;
-  contracts: SdbContract[];
-  breakpoints: SdbBreakpoint[];
-  lineOffsets: Map<number, number>; // key: line number, value: number of lines
-  ast: SdbAst;
-  sourceCode: string;
-  lineBreaks: number[];
+export class SdbFile {
+  public path: string;
+  public name: string;
+  public contracts: SdbContract[];
+  public breakpoints: SdbBreakpoint[];
+  public lineOffsets: Map<number, number>; // key: line number, value: number of lines
+  public ast: SdbAst;
+  public sourceCode: string;
+  public lineBreaks: number[];
+
+  constructor(fullPath: string) {
+    this.contracts = [];
+    this.breakpoints = [];
+    this.lineOffsets = new Map<number, number>();
+    this.lineBreaks = [];
+
+    this.path = fullPath; // TODO: split path
+  }
+
+  public fullPath() {
+    return this.path/* + "/" + this.name*/; // TODO: os specific separator, use split path
+  }
 }
 
 export type SdbFileMap = Map<string, SdbFile>; // key is full path/name of file
@@ -139,9 +155,6 @@ const matchReturnTypeFromError = message => message.match(regexpReturnError);
 
 export class LibSdb extends EventEmitter {
 
-  // maps from sourceFile to array of Mock breakpoints
-  private _breakPoints: Map<string, SdbBreakpoint[]>; // TODO: per file
-
   // since we want to send breakpoint events, we will assign an id to every event
   // so that the frontend can match events with breakpoints.
   private _breakpointId: number;
@@ -158,52 +171,78 @@ export class LibSdb extends EventEmitter {
   private _callStack: SdbStackFrame[];
   private _priorUiCallStack: SdbStackFrame[] | null;
 
-  private _variables: SdbScopeVariableMap; // TODO: per file
-
-  private _lineOffsets: Map<number, number>; // TODO: per file
-
   private _ongoingEvaluation: SdbEvaluation | null;
+
+  private _files: SdbFileMap;
+  private _contracts: SdbContractMap;
 
   constructor() {
     super();
-    this._stepData = null;
+
     this._socket = new Socket();
-    this._breakPoints = new Map<string, SdbBreakpoint[]>();
+
+    this._files = new Map<string, SdbFile>();
+    this._contracts = new Map<string, SdbContract>();
+
     this._breakpointId = 1;
+
+    this._stepData = null;
     this._priorStepData = null;
+    this._priorUiStepData = null;
+
     this._callStack = [];
     this._priorUiCallStack = [];
-    this._priorUiStepData = null;
-    this._variables = new Map<SdbAstScope, SdbVariableMap>();
-    this._lineOffsets = new Map<number, number>();
+
     this._ongoingEvaluation = null;
   }
   
   private contractsChanged(data: any) {
     // addresses changed
-    this._compilationResult = data.content;
-    this.sendEvent("solidityProxyLoaded");
+
+    this._files = new Map<string, SdbFile>();
+    this._contracts = new Map<string, SdbContract>();
+
+    const compilationResult = data.content;
     
-    let contracts = this._compilationResult.contracts;
+    const contracts = compilationResult.contracts;
     Object.keys(contracts).forEach((key) => {
-      if(contracts[key].sourcePath !== null) {
-        contracts[key].pcMap = code.util.nameOpCodes(new Buffer(contracts[key].runtimeBytecode, 'hex'))[1];
+      const contract = contracts[key];
+      if (contract.sourcePath !== null) {
+        if (!this._files.has(contract.sourcePath)) {
+          this._files.set(contract.sourcePath, new SdbFile(contract.sourcePath));
+        }
 
-        contracts[key].sourceCode = readFileSync(contracts[key].sourcePath, "utf8");
-        contracts[key].lineBreaks = sourceMappingDecoder.getLinebreakPositions(contracts[key].sourceCode);
+        let file = this._files.get(contract.sourcePath)!;
 
-        contracts[key].functionNames = {};
-        Object.keys(contracts[key].functionHashes).forEach((functionName) => {
-          const pc = GetFunctionProgramCount(contracts[key].runtimeBytecode, contracts[key].functionHashes[functionName]);
+        if (!file.sourceCode) {
+          file.sourceCode = readFileSync(contract.sourcePath, "utf8");
+          file.lineBreaks = sourceMappingDecoder.getLinebreakPositions(contract.sourceCode);
+        }
+
+        let sdbContract = new SdbContract();
+
+        sdbContract.name = contract.name;
+        sdbContract.sourcePath = contract.sourcePath;
+
+        sdbContract.pcMap = code.util.nameOpCodes(new Buffer(contract.runtimeBytecode, 'hex'))[1];
+
+        Object.keys(contract.functionHashes).forEach((functionName) => {
+          const pc = GetFunctionProgramCount(contract.runtimeBytecode, contract.functionHashes[functionName]);
           if (pc !== null) {
-            contracts[key].functionNames[pc] = functionName;
+            sdbContract.functionNames.set(pc, functionName);
           }
         });
+
+        sdbContract.bytecode = contract.bytecode;
+        sdbContract.runtimeBytecode = contract.runtimeBytecode;
+        sdbContract.srcmapRuntime = contract.srcmapRuntime;
+
+        file.contracts.push(sdbContract);
       }
     });
 
     const astWalker = new util.AstWalker();
-    astWalker.walkDetail(this._compilationResult.sources["DebugContract.sol"].AST, null, 0, (node, parent, depth) => {
+    astWalker.walkDetail(compilationResult.sources["DebugContract.sol"].AST, null, 0, (node, parent, depth) => {
       if (node.id) {
         // this is a new scope, add to map
         this._variables.set(node.id, new Map<string, SdbVariable>());
