@@ -82,10 +82,23 @@ export type SdbVariableName = string;
 export type SdbVariableMap = Map<SdbVariableName, SdbVariable>;
 export type SdbScopeVariableMap = Map<SdbAstScope, SdbVariableMap>;
 
+export type SdbAst = any;
+
 export interface SdbContract {
   name: string;
+  sourcePath: string;
+  address: string;
+  pcMap: any;
   scopeVariableMap: SdbScopeVariableMap;
+  functionHashes: any; // map<string, string>?
+  functionNames: any; // map<number, string>?
+  bytecode: string;
+  runtimeBytecode: string;
+  srcmapRuntime: string;
+  srcmap: string;
 }
+
+export type SdbContractMap = Map<string, SdbContract>; // key is address
 
 export interface SdbFile {
   path: string;
@@ -93,7 +106,12 @@ export interface SdbFile {
   contracts: SdbContract[];
   breakpoints: SdbBreakpoint[];
   lineOffsets: Map<number, number>; // key: line number, value: number of lines
+  ast: SdbAst;
+  sourceCode: string;
+  lineBreaks: number[];
 }
+
+export type SdbFileMap = Map<string, SdbFile>; // key is full path/name of file
 
 function adjustBreakpointLineNumbers(breakpoints: Map<string, SdbBreakpoint[]>, path: string, startLine: number, numLines: number): void {
   let bps = breakpoints.get(path);
