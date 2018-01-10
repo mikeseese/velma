@@ -93,6 +93,7 @@ export class SdbContract {
   bytecode: string;
   runtimeBytecode: string;
   srcmapRuntime: string;
+  ast: SdbAst;
 
   constructor() {
     this.pcMap = new Map<number, number>();
@@ -202,6 +203,8 @@ export class LibSdb extends EventEmitter {
     this._files = new Map<string, SdbFile>();
     this._contracts = new Map<string, SdbContract>();
 
+    let contractNameMap = new Map<string, SdbContract>();
+
     const compilationResult = data.content;
     
     const contracts = compilationResult.contracts;
@@ -221,7 +224,7 @@ export class LibSdb extends EventEmitter {
 
         let sdbContract = new SdbContract();
 
-        sdbContract.name = contract.name;
+        sdbContract.name = key;
         sdbContract.sourcePath = contract.sourcePath;
 
         sdbContract.pcMap = code.util.nameOpCodes(new Buffer(contract.runtimeBytecode, 'hex'))[1];
@@ -237,44 +240,93 @@ export class LibSdb extends EventEmitter {
         sdbContract.runtimeBytecode = contract.runtimeBytecode;
         sdbContract.srcmapRuntime = contract.srcmapRuntime;
 
+        contractNameMap.set(key, sdbContract);
         file.contracts.push(sdbContract);
       }
     });
 
-    const astWalker = new util.AstWalker();
-    astWalker.walkDetail(compilationResult.sources["DebugContract.sol"].AST, null, 0, (node, parent, depth) => {
-      if (node.id) {
-        // this is a new scope, add to map
-        this._variables.set(node.id, new Map<string, SdbVariable>());
+    // fill in this._contracts with compilationResult.contractMap
+    Object.keys(compilationResult.contractMap).forEach((address) => {
+      if (contractNameMap.has(compilationResult.contractMap[address])) {
+        this._contracts.set(address, contractNameMap.get(compilationResult.contractMap[address])!)
+      }
+    });
 
-        if (node.name === "VariableDeclaration") {
-          let childIndex: number | null = null;
-          if (parent) {
-            // look for the child in the parent to get the index
-            for (let i = 0; i < parent.children.length; i++) {
-              if (parent.children[i].id === node.id) {
-                childIndex = i;
-              }
-            }
+    const astWalker = new util.AstWalker();
+
+    // assign AST from the compilationResult.sources variable to each SdbFile
+    Object.keys(compilationResult.sources).forEach((source) => {
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+      // TODO:
+    });
+
+    // split each SdbFile AST to the contract levels
+    this._files.forEach((file, path) => {
+      astWalker.walk(file.ast, (node) => {
+        if (node.name === "ContractDefinition") {
+          if (contractNameMap.has(node.attributes.name)) {
+            contractNameMap.get(node.attributes.name)!.ast = JSON.parse(JSON.stringify(node));
           }
 
-          const variable = <SdbVariable> {
-            name: node.attributes.name,
-            type: node.attributes.type,
-            scope: <SdbAstScope> {
-              id: node.attributes.scope,
-              childIndex: childIndex,
-              depth: depth
-            },
-            stackPosition: null
-          };
-
-          // add the variable to the parent's scope
-          this._variables.get(variable.scope)!.set(variable.name, variable);
+          return false;
         }
-      }
 
-      return true;
+        return true;
+      });
+    });
+
+    // get variable declarations for each SdbContract AST
+    this._contracts.forEach((contract, address) => {
+      astWalker.walkDetail(contract.ast, null, 0, (node, parent, depth) => {
+        if (node.id) {
+          // this is a new scope, add to map
+          contract.scopeVariableMap.set(node.id, new Map<string, SdbVariable>());
+  
+          if (node.name === "VariableDeclaration") {
+            let childIndex: number | null = null;
+            if (parent) {
+              // look for the child in the parent to get the index
+              for (let i = 0; i < parent.children.length; i++) {
+                if (parent.children[i].id === node.id) {
+                  childIndex = i;
+                }
+              }
+            }
+  
+            const variable = <SdbVariable> {
+              name: node.attributes.name,
+              type: node.attributes.type,
+              scope: <SdbAstScope> {
+                id: node.attributes.scope,
+                childIndex: childIndex,
+                depth: depth
+              },
+              stackPosition: null
+            };
+  
+            // add the variable to the parent's scope
+            contract.scopeVariableMap.get(variable.scope)!.set(variable.name, variable);
+          }
+        }
+  
+        return true;
+      });
     });
     
     const response = {
