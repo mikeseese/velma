@@ -287,6 +287,36 @@ export class SdbFile {
   public fullPath() {
     return this.path/* + "/" + this.name*/; // TODO: os specific separator, use split path
   }
+
+  clone(): SdbFile {
+    let clone = new SdbFile(this.fullPath());
+
+    clone.path = this.path; // TODO: future redundant
+
+    clone.name = this.name; // TODO: future redundant
+
+    for (let i = 0; i < this.contracts.length; i++) {
+      clone.contracts.push(this.contracts[i].clone());
+    }
+
+    for (let i = 0; i < this.breakpoints.length; i++) {
+      clone.breakpoints.push(this.breakpoints[i].clone());
+    }
+
+    for (const lineOffset of this.lineOffsets) {
+      clone.lineOffsets.set(lineOffset[0], lineOffset[1]);
+    }
+
+    clone.ast = CircularJSON.parse(CircularJSON.stringify(this.ast));
+
+    clone.sourceCode = this.sourceCode;
+
+    for (let i = 0; i < this.lineBreaks.length; i++) {
+      clone.lineBreaks.push(this.lineBreaks[i]);
+    }
+
+    return clone;
+  }
 }
 
 export type SdbFileMap = Map<string, SdbFile>; // key is full path/name of file
@@ -547,14 +577,13 @@ export class LibSdb extends EventEmitter {
     }*/
 
     if(typeof this._compilationResult === "undefined" || typeof this._compilationResult.contracts === "undefined") {
-      this._stepData = <SdbStepData> {
-        debuggerMessageId: data.id,
-        source: null,
-        location: null,
-        contractAddress: address,
-        vmData: data.content,
-        scope: []
-      };
+      this._stepData = new SdbStepData();
+      this._stepData.debuggerMessageId = data.id;
+      this._stepData.source = null;
+      this._stepData.location = null;
+      this._stepData.contractAddress = address;
+      this._stepData.vmData = data.content;
+      this._stepData.scope = [];
       this.respondToDebugHook();
     }
     else {
@@ -1136,6 +1165,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
     let contract = this._contracts.get(this._stepData.contractAddress)!;
     let newContract: SdbContract = contract.clone();
     let file = this._files.get(contract.sourcePath)!;
+    let newFile: SdbFile = file.clone();
 
     const functionArgs = this.findArguments(frameId, expression);
     const functionInsert = this.generateFunction(expression, functionArgs);
@@ -1172,10 +1202,10 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
     if (this._stepData !== null && this._stepData.location !== null && this._stepData.location.start !== null) {
       const currentLine = this._stepData.location.start.line;
       if (currentLine > 0) {
-        const insertPosition = newContract.lineBreaks[currentLine - 1] + 1;
+        const insertPosition = newFile.lineBreaks[currentLine - 1] + 1;
 
-        newContract.sourceCode = [newContract.sourceCode.slice(0, insertPosition), functionInsert.reference + "\n", newContract.sourceCode.slice(insertPosition)].join('');
-        newContract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newContract.sourceCode);
+        newFile.sourceCode = [newFile.sourceCode.slice(0, insertPosition), functionInsert.reference + "\n", newFile.sourceCode.slice(insertPosition)].join('');
+        newFile.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
 
         // Adjust line numbers
         this.addLineOffset(currentLine, 1, newLineOffsets);
@@ -1185,20 +1215,20 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
           adjustCallstackLineNumbers(newPriorUiCallstack, newContract.sourcePath, currentLine, 1);
         }
 
-        const contractDeclarationPosition = newContract.sourceCode.indexOf("contract " + contract.name);
+        const contractDeclarationPosition = newFile.sourceCode.indexOf("contract " + contract.name);
         let functionInsertPosition: number | null = null;
         let functionInsertLine: number | null = null;
-        for (let i = 0; i < newContract.lineBreaks.length; i++) {
-          if (newContract.lineBreaks[i] > contractDeclarationPosition) {
+        for (let i = 0; i < newFile.lineBreaks.length; i++) {
+          if (newFile.lineBreaks[i] > contractDeclarationPosition) {
             functionInsertLine = i + 1;
-            functionInsertPosition = newContract.lineBreaks[i] + 1;
+            functionInsertPosition = newFile.lineBreaks[i] + 1;
             break;
           }
         }
 
         if (functionInsertPosition !== null && functionInsertLine !== null) {
-          newContract.sourceCode = [newContract.sourceCode.slice(0, functionInsertPosition), functionInsert.code, newContract.sourceCode.slice(functionInsertPosition)].join('');
-          newContract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newContract.sourceCode);
+          newFile.sourceCode = [newFile.sourceCode.slice(0, functionInsertPosition), functionInsert.code, newFile.sourceCode.slice(functionInsertPosition)].join('');
+          newFile.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
 
           // Adjust line numbers
           const numNewLines = (functionInsert.code.match(/\n/g) || []).length;
@@ -1209,7 +1239,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
             adjustCallstackLineNumbers(newPriorUiCallstack, newContract.sourcePath, functionInsertLine, numNewLines);
           }
 
-          let result = compile(newContract.sourceCode, 0);
+          let result = compile(newFile.sourceCode, 0);
           for (let i = 0; i < result.errors.length; i++) {
             const error = result.errors[i];
             let match = matchReturnTypeFromError(error);
@@ -1217,15 +1247,15 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
               // return type
               const refString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (bool)`;
               const repString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (` + match[1] + `)`;
-              newContract.sourceCode = newContract.sourceCode.replace(refString, repString);
-              newContract.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newContract.sourceCode);
-              result = compile(newContract.sourceCode, 0);
+              newFile.sourceCode = newFile.sourceCode.replace(refString, repString);
+              newFile.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
+              result = compile(newFile.sourceCode, 0);
             }
             else {
 
             }
           }
-          const compiledContract = result.contracts[":DebugContract"];
+          const compiledContract = result.contracts[":" + newContract.name];
 
           // merge compilation
           newContract.bytecode = compiledContract.bytecode;
@@ -1234,11 +1264,11 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
 
           // add our flair
           newContract.pcMap = code.util.nameOpCodes(new Buffer(newContract.runtimeBytecode, 'hex'))[1];
-          newContract.functionNames = {};
-          Object.keys(newContract.functionHashes).forEach((functionName) => {
-            const pc = GetFunctionProgramCount(newContract.runtimeBytecode, newContract.functionHashes[functionName]);
+          newContract.functionNames = new Map<number, string>();
+          Object.keys(compiledContract.functionHashes).forEach((functionName) => {
+            const pc = GetFunctionProgramCount(newContract.runtimeBytecode, compiledContract.functionHashes[functionName]);
             if (pc !== null) {
-              newContract.functionNames[pc] = functionName;
+              newContract.functionNames.set(pc, functionName);
             }
           });
           
@@ -1318,12 +1348,12 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
           let newSourceLocation = CircularJSON.parse(CircularJSON.stringify(this._stepData.source));
           newSourceLocation.start += codeOffset;
           let newLine: number | null = null;
-          for (let i = 0; i < newContract.lineBreaks.length; i++) {
-            if (i === 0 && newSourceLocation.start < newContract.lineBreaks[i]) {
+          for (let i = 0; i < newFile.lineBreaks.length; i++) {
+            if (i === 0 && newSourceLocation.start < newFile.lineBreaks[i]) {
               newLine = i;
               break;
             }
-            else if (i > 0 && newContract.lineBreaks[i - 1] < newSourceLocation.start && newSourceLocation.start < newContract.lineBreaks[i]) {
+            else if (i > 0 && newFile.lineBreaks[i - 1] < newSourceLocation.start && newSourceLocation.start < newFile.lineBreaks[i]) {
               newLine = i;
               break;
             }
@@ -1332,33 +1362,12 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
           this._callStack = newCallstack;
           this._priorUiCallStack = newPriorUiCallstack;
 
-          file.breakpoints = newBreakpoints;
-          file.lineOffsets = newLineOffsets;
-          contract.scopeVariableMap = newVariables;
+          newFile.breakpoints = newBreakpoints;
+          newFile.lineOffsets = newLineOffsets;
+          newContract.scopeVariableMap = newVariables;
 
-          // TODO: FIGURE OUT WHETHER OR NOT WE NEED TO SET this._files and this._contracts back
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
-          // TODO:
+          this._files.set(newFile.fullPath(), newFile);
+          this._contracts.set(this._stepData.contractAddress, newContract);
 
           if (newLine !== null) {
             this.setBreakPoint(newContract.sourcePath, newLine, false, false);
@@ -1368,17 +1377,14 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
             console.log("ERROR: We could not find the line of after we're evaluating...but we're going to execute anyway? shrug");
           }
 
-          this._ongoingEvaluation = <SdbEvaluation> {
-            functionName: functionInsert.name,
-            callback: (result) => {
-              callback(result);
-            }
-          };
+          this._ongoingEvaluation = new SdbEvaluation();
+          this._ongoingEvaluation.functionName = functionInsert.name;
+          this._ongoingEvaluation.callback = callback;
 
           // push the code
           const content = {
             "type": "putCodeRequest",
-            "address": newContract.address,
+            "address": this._stepData.contractAddress,
             "code": newContract.runtimeBytecode,
             "pc": newPc
           };
@@ -1388,13 +1394,13 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
     }
   }
 
-  private addLineOffset(line: number, numLines: number, lineOffsets: Map<number, number> = this._lineOffsets) {
+  private addLineOffset(line: number, numLines: number, lineOffsets: Map<number, number>) {
     const numPrevLines: number = lineOffsets.get(line) || 0;
     lineOffsets.set(line, numPrevLines + numLines);
   }
 
   // this is the line number in the original source using a modified/step data line number
-  private getOriginalLine(newLine: number, lineOffsets: Map<number, number> = this._lineOffsets): number {
+  private getOriginalLine(newLine: number, lineOffsets: Map<number, number>): number {
     let originalLine = newLine;
 
     lineOffsets.forEach((numLines, line) => {
@@ -1407,7 +1413,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
   }
 
   // this is the line number in the modified source using an original line number
-  private getNewLine(originalLine: number, lineOffsets: Map<number, number> = this._lineOffsets): number {
+  private getNewLine(originalLine: number, lineOffsets: Map<number, number>): number {
     let newLine = originalLine;
 
     lineOffsets.forEach((numLines, line) => {
