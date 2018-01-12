@@ -382,7 +382,6 @@ export class LibSdb extends EventEmitter {
   private contractsChanged(data: any) {
     // addresses changed
 
-    this._files = new Map<string, SdbFile>();
     this._contracts = new Map<string, SdbContract>();
 
     let contractNameMap = new Map<string, SdbContract>();
@@ -454,18 +453,20 @@ export class LibSdb extends EventEmitter {
 
     // split each SdbFile AST to the contract levels
     this._files.forEach((file, path) => {
-      astWalker.walk(file.ast, (node) => {
-        if (node.name === "ContractDefinition") {
-          const contractKey = normalizePath(file.fullPath() + ":" + node.attributes.name);
-          if (contractNameMap.has(contractKey)) {
-            contractNameMap.get(contractKey)!.ast = JSON.parse(JSON.stringify(node));
+      if (file.ast) {
+        astWalker.walk(file.ast, (node) => {
+          if (node.name === "ContractDefinition") {
+            const contractKey = normalizePath(file.fullPath() + ":" + node.attributes.name);
+            if (contractNameMap.has(contractKey)) {
+              contractNameMap.get(contractKey)!.ast = JSON.parse(JSON.stringify(node));
+            }
+
+            return false;
           }
 
-          return false;
-        }
-
-        return true;
-      });
+          return true;
+        });
+      }
     });
 
     // get variable declarations for each SdbContract AST
@@ -485,17 +486,15 @@ export class LibSdb extends EventEmitter {
                 }
               }
             }
-  
-            const variable = <SdbVariable> {
-              name: node.attributes.name,
-              type: node.attributes.type,
-              scope: <SdbAstScope> {
-                id: node.attributes.scope,
-                childIndex: childIndex,
-                depth: depth
-              },
-              stackPosition: null
-            };
+
+            let variable = new SdbVariable();
+            variable.name = node.attributes.name;
+            variable.type = node.attributes.type;
+            variable.scope = new SdbAstScope();
+            variable.scope.id = node.attributes.scope;
+            variable.scope.childIndex = childIndex;
+            variable.scope.depth = depth;
+            variable.stackPosition = null;
   
             // add the variable to the parent's scope
             contract.scopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
@@ -532,11 +531,11 @@ export class LibSdb extends EventEmitter {
             }
           }
         }
-        scope.unshift(<SdbAstScope> {
-          id: node.id,
-          childIndex: childIndex,
-          depth: depth
-        });
+        let astScope = new SdbAstScope();
+        astScope.id = node.id;
+        astScope.childIndex = childIndex;
+        astScope.depth = depth;
+        scope.unshift(astScope);
         return true;
       }
       else {
@@ -606,11 +605,10 @@ export class LibSdb extends EventEmitter {
           // push the prior function onto the stack. the current location for stack goes on when requested
           const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
           const functionName = node.attributes.name;
-          const frame = <SdbStackFrame> {
-            name: functionName,
-            file: contract.sourcePath,
-            line: this._priorStepData.location.start === null ? null : this._priorStepData.location.start.line
-          };
+          let frame = new SdbStackFrame();
+          frame.name = functionName;
+          frame.file = contract.sourcePath;
+          frame.line = this._priorStepData.location.start === null ? null : this._priorStepData.location.start.line;
           this._callStack.unshift(frame);
         }
         else if (this._priorStepData.source.jump === "o") {
@@ -639,11 +637,10 @@ export class LibSdb extends EventEmitter {
 
           // TODO: figure this out
           // const functionName = contract.functionNames[pc];
-          const frame = <SdbStackFrame> {
-            name: "external place?",
-            file: contract.sourcePath,
-            line: 0 //currentLocation.start === null ? null : currentLocation.start.line
-          };
+          let frame = new SdbStackFrame();
+          frame.name = "external place?";
+          frame.file = contract.sourcePath;
+          frame.line = 0 //currentLocation.start === null ? null : currentLocation.start.line;
           this._callStack.unshift(frame);
         }
       }
@@ -669,14 +666,13 @@ export class LibSdb extends EventEmitter {
         }
       }
 
-      this._stepData = <SdbStepData> {
-        debuggerMessageId: data.id,
-        source: sourceLocation,
-        location: currentLocation,
-        contractAddress: address,
-        vmData: data.content,
-        scope: currentScope
-      };
+      this._stepData = new SdbStepData();
+      this._stepData.debuggerMessageId = data.id;
+      this._stepData.source = sourceLocation;
+      this._stepData.location = currentLocation;
+      this._stepData.contractAddress = address;
+      this._stepData.vmData = data.content;
+      this._stepData.scope = currentScope;
 
       this.sendEvent("step");
     }
@@ -834,13 +830,22 @@ export class LibSdb extends EventEmitter {
    * Set breakpoint in file with given line.
    */
   public setBreakPoint(path: string, line: number, visible: boolean = true, originalSource: boolean = true) : SdbBreakpoint {
+    if (!this._files.has(path)) {
+      this._files.set(path, new SdbFile(path));
+    }
+    const file = this._files.get(path)!;
+
     if (originalSource) {
       // we need to modify the line number using line offsets with the original source bp's
-      line = this.getNewLine(line, this._files.get(path)!.lineOffsets);
+      line = this.getNewLine(line, file.lineOffsets);
     }
 
-    const bp = <SdbBreakpoint> { verified: false, line, id: this._breakpointId++, visible: visible, originalSource: originalSource };
-    const file = this._files.get(path); // TODO: handle when file isn't in this._files
+    let bp = new SdbBreakpoint();
+    bp.verified = false;
+    bp.line = line;
+    bp.id = this._breakpointId++;
+    bp.visible = visible;
+    bp.originalSource = originalSource;
 
     if (file) {
       if (file.breakpoints.indexOf(bp) === -1) {
@@ -1127,13 +1132,12 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
 
 `
 
-    let expressionFunction = <SdbExpressionFunction> {
-      name: functionName,
-      reference: functionReference,
-      args: args,
-      argsString: argsString,
-      code: functionCode
-    };
+    let expressionFunction = new SdbExpressionFunction();
+    expressionFunction.name = functionName;
+    expressionFunction.reference = functionReference;
+    expressionFunction.args = args;
+    expressionFunction.argsString = argsString;
+    expressionFunction.code = functionCode;
 
     return expressionFunction;
   }
@@ -1169,13 +1173,20 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
 
     let newBreakpoints: SdbBreakpoint[] = [];
     for (let i = 0; i < file.breakpoints.length; i++) {
-      let copyValue = <SdbBreakpoint> { id: file.breakpoints[i].id, line: file.breakpoints[i].line, verified: file.breakpoints[i].verified, visible: file.breakpoints[i].visible };
+      let copyValue = new SdbBreakpoint();
+      copyValue.id = file.breakpoints[i].id;
+      copyValue.line = file.breakpoints[i].line;
+      copyValue.verified = file.breakpoints[i].verified;
+      copyValue.visible = file.breakpoints[i].visible;
       newBreakpoints.push(copyValue);
     }
 
     let newCallstack: SdbStackFrame[] = [];
     for (let i = 0; i < this._callStack.length; i++) {
-      let copyValue = <SdbStackFrame> { file: this._callStack[i].file, line: this._callStack[i].line, name: this._callStack[i].name };
+      let copyValue = new SdbStackFrame();
+      copyValue.file = this._callStack[i].file;
+      copyValue.line = this._callStack[i].line;
+      copyValue.name = this._callStack[i].name;
       newCallstack.push(copyValue);
     }
 
@@ -1186,7 +1197,10 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
     else {
       newPriorUiCallstack = [];
       for (let i = 0; i < this._priorUiCallStack.length; i++) {
-        let copyValue = <SdbStackFrame> { file: this._priorUiCallStack[i].file, line: this._priorUiCallStack[i].line, name: this._priorUiCallStack[i].name };
+        let copyValue = new SdbStackFrame()
+        copyValue.file = this._priorUiCallStack[i].file;
+        copyValue.line = this._priorUiCallStack[i].line;
+        copyValue.name = this._priorUiCallStack[i].name;
         newPriorUiCallstack.push(copyValue);
       }
     }
@@ -1255,7 +1269,11 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
           newContract.srcmapRuntime = compiledContract.srcmapRuntime;
 
           // add our flair
-          newContract.pcMap = code.util.nameOpCodes(new Buffer(newContract.runtimeBytecode, 'hex'))[1];
+          const pcMap = code.util.nameOpCodes(new Buffer(newContract.runtimeBytecode, 'hex'))[1];
+          Object.keys(pcMap).forEach((pc) => {
+            newContract.pcMap.set(parseInt(pc), pcMap[pc]);
+          });
+
           newContract.functionNames = new Map<number, string>();
           Object.keys(compiledContract.functionHashes).forEach((functionName) => {
             const pc = GetFunctionProgramCount(newContract.runtimeBytecode, compiledContract.functionHashes[functionName]);
@@ -1290,16 +1308,14 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                   }
                 });
 
-                const variable = <SdbVariable> {
-                  name: node.attributes.name,
-                  type: node.attributes.type,
-                  scope: <SdbAstScope> {
-                    id: node.attributes.scope,
-                    childIndex: childIndex,
-                    depth: depth
-                  },
-                  stackPosition: stackPosition
-                };
+                let variable = new SdbVariable();
+                variable.name = node.attributes.name;
+                variable.type = node.attributes.type;
+                variable.scope = new SdbAstScope();
+                variable.scope.id = node.attributes.scope;
+                variable.scope.childIndex = childIndex;
+                variable.scope.depth = depth;
+                variable.stackPosition = stackPosition;
 
                 // add variable to the parent's scope
                 newVariables.get(variable.scope.id)!.set(variable.name, variable);
