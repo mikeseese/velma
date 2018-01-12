@@ -4,12 +4,15 @@ import { Socket } from "net";
 import { util, code } from "/home/mike/projects/remix/src/index";
 import { compile } from "solc";
 import { v4 as uuidv4 } from "uuid";
+import { normalize as normalizePath } from "path";
 
 const CircularJSON = require("circular-json");
 const BigNumber = require("bignumber.js");
 const traverse = require("traverse");
 const parseExpression = require("/home/mike/projects/solidity-parser/index").parse;
 const sourceMappingDecoder = new util.SourceMappingDecoder();
+
+const fileSeparator = /^win/.test(process.platform) ? "\\" : "/";
 
 // bytecode is a hex string of the bytecode without the preceding '0x'
 // methodId is the SHA3 hash of the ABI for this function
@@ -92,7 +95,6 @@ export class SdbStackFrame {
   name: string;
   file: string;
   line: number;
-  pc: number;
 
   constructor() {
   }
@@ -105,8 +107,6 @@ export class SdbStackFrame {
     clone.file = this.file;
 
     clone.line = this.line;
-
-    clone.pc = this.pc;
 
     return clone;
   }
@@ -207,7 +207,7 @@ export class SdbEvaluation {
 
 export type SdbVariableName = string;
 export type SdbVariableMap = Map<SdbVariableName, SdbVariable>;
-export type SdbScopeVariableMap = Map<SdbAstScope, SdbVariableMap>;
+export type SdbScopeVariableMap = Map<number, SdbVariableMap>;
 
 export type SdbAst = any;
 
@@ -224,7 +224,7 @@ export class SdbContract {
 
   constructor() {
     this.pcMap = new Map<number, number>();
-    this.scopeVariableMap = new Map<SdbAstScope, SdbVariableMap>();
+    this.scopeVariableMap = new Map<number, SdbVariableMap>();
     this.functionNames = new Map<number, string>();
   }
 
@@ -244,7 +244,7 @@ export class SdbContract {
       for (const variable of variables[1]) {
         variablesClone.set(variable[0], variable[1].clone());
       }
-      clone.scopeVariableMap.set(variables[0].clone(), variablesClone[1]);
+      clone.scopeVariableMap.set(variables[0], variablesClone[1]);
     }
 
     for (const v of this.functionNames) {
@@ -281,19 +281,16 @@ export class SdbFile {
     this.lineOffsets = new Map<number, number>();
     this.lineBreaks = [];
 
-    this.path = fullPath; // TODO: split path
+    this.path = fullPath.substring(0, fullPath.lastIndexOf("/"));
+    this.name = fullPath.substring(fullPath.lastIndexOf("/"));
   }
 
   public fullPath() {
-    return this.path/* + "/" + this.name*/; // TODO: os specific separator, use split path
+    return normalizePath(this.path + fileSeparator + this.name);
   }
 
   clone(): SdbFile {
     let clone = new SdbFile(this.fullPath());
-
-    clone.path = this.path; // TODO: future redundant
-
-    clone.name = this.name; // TODO: future redundant
 
     for (let i = 0; i < this.contracts.length; i++) {
       clone.contracts.push(this.contracts[i].clone());
@@ -330,7 +327,6 @@ function adjustBreakpointLineNumbers(breakpoints: SdbBreakpoint[], path: string,
 };
 
 function adjustCallstackLineNumbers(callstack: SdbStackFrame[], path: string, startLine: number, numLines: number): void {
-  // TODO: should we modify the PC as well? probably
   for (let i = 0; i < callstack.length; i++) {
     if (callstack[i].file === path && callstack[i].line >= startLine) {
       callstack[i].line += numLines;
@@ -349,8 +345,6 @@ export class LibSdb extends EventEmitter {
   private _breakpointId: number;
 
   private _socket: Socket;
-
-  private _compilationResult: any;
 
   private _stepData: SdbStepData | null;
 
@@ -407,7 +401,7 @@ export class LibSdb extends EventEmitter {
 
         if (!file.sourceCode) {
           file.sourceCode = readFileSync(contract.sourcePath, "utf8");
-          file.lineBreaks = sourceMappingDecoder.getLinebreakPositions(contract.sourceCode);
+          file.lineBreaks = sourceMappingDecoder.getLinebreakPositions(file.sourceCode);
         }
 
         let sdbContract = new SdbContract();
@@ -416,7 +410,10 @@ export class LibSdb extends EventEmitter {
         sdbContract.name = contractName[contractName.length - 1];
         sdbContract.sourcePath = contract.sourcePath;
 
-        sdbContract.pcMap = code.util.nameOpCodes(new Buffer(contract.runtimeBytecode, 'hex'))[1];
+        const pcMap = code.util.nameOpCodes(new Buffer(contract.runtimeBytecode, 'hex'))[1];
+        Object.keys(pcMap).forEach((pc) => {
+          sdbContract.pcMap.set(parseInt(pc), pcMap[pc]);
+        });
 
         Object.keys(contract.functionHashes).forEach((functionName) => {
           const pc = GetFunctionProgramCount(contract.runtimeBytecode, contract.functionHashes[functionName]);
@@ -444,33 +441,24 @@ export class LibSdb extends EventEmitter {
     const astWalker = new util.AstWalker();
 
     // assign AST from the compilationResult.sources variable to each SdbFile
-    Object.keys(compilationResult.sources).forEach((source) => {
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-      // TODO:
-    });
+    const keys = Object.keys(compilationResult.sources);
+    for (let i = 0; i < keys.length; i++) {
+      const source = keys[i];
+      const sourcePath = normalizePath(source);
+      const file = this._files.get(sourcePath);
+
+      if (file) {
+        file.ast = compilationResult.sources[source].AST;
+      }
+    };
 
     // split each SdbFile AST to the contract levels
     this._files.forEach((file, path) => {
       astWalker.walk(file.ast, (node) => {
         if (node.name === "ContractDefinition") {
-          if (contractNameMap.has(node.attributes.name)) {
-            contractNameMap.get(node.attributes.name)!.ast = JSON.parse(JSON.stringify(node));
+          const contractKey = normalizePath(file.fullPath() + ":" + node.attributes.name);
+          if (contractNameMap.has(contractKey)) {
+            contractNameMap.get(contractKey)!.ast = JSON.parse(JSON.stringify(node));
           }
 
           return false;
@@ -510,7 +498,7 @@ export class LibSdb extends EventEmitter {
             };
   
             // add the variable to the parent's scope
-            contract.scopeVariableMap.get(variable.scope)!.set(variable.name, variable);
+            contract.scopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
           }
         }
   
@@ -527,9 +515,9 @@ export class LibSdb extends EventEmitter {
     this._socket.write(CircularJSON.stringify(response));
   }
 
-  private findScope(index: number): SdbAstScope[] {
+  private findScope(index: number, address: string): SdbAstScope[] {
     let scope: SdbAstScope[] = [];
-    const ast = this._compilationResult.sources["DebugContract.sol"].AST; // TODO: fixme
+    const ast = this._contracts.get(address)!.ast;
 
     const astWalker = new util.AstWalker();
     astWalker.walkDetail(ast, null, 0, (node, parent, depth) => {
@@ -576,7 +564,7 @@ export class LibSdb extends EventEmitter {
       return;
     }*/
 
-    if(typeof this._compilationResult === "undefined" || typeof this._compilationResult.contracts === "undefined") {
+    if(this._contracts.get(address) === undefined) {
       this._stepData = new SdbStepData();
       this._stepData.debuggerMessageId = data.id;
       this._stepData.source = null;
@@ -604,7 +592,10 @@ export class LibSdb extends EventEmitter {
       }
 
       // get line number from pc
-      const index = contract.pcMap.get(pc) || null;
+      const index = contract.pcMap.get(pc);
+      if(index === undefined) {
+        //
+      }
       const sourceLocation = sourceMappingDecoder.atIndex(index, contract.srcmapRuntime);
       const currentLocation = sourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, file.lineBreaks);
 
@@ -618,25 +609,26 @@ export class LibSdb extends EventEmitter {
           const frame = <SdbStackFrame> {
             name: functionName,
             file: contract.sourcePath,
-            line: this._priorStepData.location.start === null ? null : this._priorStepData.location.start.line,
-            pc: pc
+            line: this._priorStepData.location.start === null ? null : this._priorStepData.location.start.line
           };
           this._callStack.unshift(frame);
         }
         else if (this._priorStepData.source.jump === "o") {
           // jump out, we should be at a JUMPDEST currently
           const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
-          const functionName = node.attributes.name;
-          if (this._ongoingEvaluation !== null && this._ongoingEvaluation.functionName === functionName) {
-            // get variable at top of stack
-            // TODO: add support for multiple variable evaluations
+          if (node !== null) {
+            const functionName = node.attributes.name;
+            if (this._ongoingEvaluation !== null && this._ongoingEvaluation.functionName === functionName) {
+              // get variable at top of stack
+              // TODO: add support for multiple variable evaluations
 
-            const buf = new Buffer(data.content.stack[data.content.stack.length - 1].data);
-            const num = new BigNumber("0x" + buf.toString("hex"));
+              const buf = new Buffer(data.content.stack[data.content.stack.length - 1].data);
+              const num = new BigNumber("0x" + buf.toString("hex"));
 
-            this._ongoingEvaluation.callback(num.toString());
+              this._ongoingEvaluation.callback(num.toString());
 
-            this._ongoingEvaluation = null;
+              this._ongoingEvaluation = null;
+            }
           }
 
           this._callStack.shift();
@@ -650,15 +642,14 @@ export class LibSdb extends EventEmitter {
           const frame = <SdbStackFrame> {
             name: "external place?",
             file: contract.sourcePath,
-            line: 0, //currentLocation.start === null ? null : currentLocation.start.line,
-            pc: pc
+            line: 0 //currentLocation.start === null ? null : currentLocation.start.line
           };
           this._callStack.unshift(frame);
         }
       }
 
       // find current scope
-      const currentScope = this.findScope(sourceLocation.start);
+      const currentScope = this.findScope(sourceLocation.start, address);
 
       // is there a variable declaration here?
       if (sourceLocation) {
@@ -818,7 +809,7 @@ export class LibSdb extends EventEmitter {
       const contract = this._contracts.get(this._stepData.contractAddress)!;
       for (let i = 0; i < this._stepData.scope.length; i++) {
         const scope = this._stepData.scope[i];
-        const scopeVars = contract.scopeVariableMap.get(scope)!;
+        const scopeVars = contract.scopeVariableMap.get(scope.id)!;
         const names = scopeVars.keys();
         for (const name of names) {
           const variable = scopeVars.get(name);
@@ -1092,7 +1083,7 @@ export class LibSdb extends EventEmitter {
       let allVariables: SdbVariableMap = new Map<string, SdbVariable>();
       for (let i = 0; i < this._stepData.scope.length; i++) {
         const scope = this._stepData.scope[i];
-        const scopeVars = contract.scopeVariableMap.get(scope)!;
+        const scopeVars = contract.scopeVariableMap.get(scope.id)!;
         const names = scopeVars.keys();
         for (const name of names) {
           const variable = scopeVars.get(name);
@@ -1184,7 +1175,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
 
     let newCallstack: SdbStackFrame[] = [];
     for (let i = 0; i < this._callStack.length; i++) {
-      let copyValue = <SdbStackFrame> { file: this._callStack[i].file, line: this._callStack[i].line, name: this._callStack[i].name, pc: this._callStack[i].pc };
+      let copyValue = <SdbStackFrame> { file: this._callStack[i].file, line: this._callStack[i].line, name: this._callStack[i].name };
       newCallstack.push(copyValue);
     }
 
@@ -1195,7 +1186,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
     else {
       newPriorUiCallstack = [];
       for (let i = 0; i < this._priorUiCallStack.length; i++) {
-        let copyValue = <SdbStackFrame> { file: this._priorUiCallStack[i].file, line: this._priorUiCallStack[i].line, name: this._priorUiCallStack[i].name, pc: this._priorUiCallStack[i].pc };
+        let copyValue = <SdbStackFrame> { file: this._priorUiCallStack[i].file, line: this._priorUiCallStack[i].line, name: this._priorUiCallStack[i].name };
         newPriorUiCallstack.push(copyValue);
       }
     }
@@ -1274,7 +1265,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
           });
           
           const astWalker = new util.AstWalker();
-          let newVariables = new Map<SdbAstScope, SdbVariableMap>();
+          let newVariables = new Map<number, SdbVariableMap>();
           astWalker.walkDetail(result.sources[""].AST, null, 0, (node, parent, depth) => {
             if (node.id) {
               newVariables.set(node.id, new Map<string, SdbVariable>());
@@ -1311,7 +1302,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                 };
 
                 // add variable to the parent's scope
-                newVariables.get(variable.scope)!.set(variable.name, variable);
+                newVariables.get(variable.scope.id)!.set(variable.name, variable);
               }
             }
 
