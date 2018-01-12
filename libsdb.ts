@@ -782,6 +782,7 @@ export class LibSdb extends EventEmitter {
 
     if (this._stepData !== null) {
       const contract = this._contracts.get(this._stepData.contractAddress)!;
+      const file = this._files.get(contract.sourcePath)!;
       const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, { AST: contract.ast });
       const functionName = node.attributes.name;
       if (startFrame === 0 && this._stepData.location && this._stepData.location.start) {
@@ -789,7 +790,7 @@ export class LibSdb extends EventEmitter {
           "index": startFrame,
           "name": functionName,
           "file": contract.sourcePath,
-          "line": this.getOriginalLine(this._stepData.location.start.line)
+          "line": this.getOriginalLine(this._stepData.location.start.line, file.lineOffsets)
         });
       }
     }
@@ -799,7 +800,7 @@ export class LibSdb extends EventEmitter {
         "index": i + 1, // offset by one due to the current line "at the top of the stack", but not in the callstack variable
         "name": this._callStack[i].name,
         "file": this._callStack[i].file,
-        "line": this.getOriginalLine(this._callStack[i].line)
+        "line": this.getOriginalLine(this._callStack[i].line, this._files.get(this._callStack[i].file)!.lineOffsets)
       });
     }
 
@@ -844,7 +845,7 @@ export class LibSdb extends EventEmitter {
   public setBreakPoint(path: string, line: number, visible: boolean = true, originalSource: boolean = true) : SdbBreakpoint {
     if (originalSource) {
       // we need to modify the line number using line offsets with the original source bp's
-      line = this.getNewLine(line);
+      line = this.getNewLine(line, this._files.get(path)!.lineOffsets);
     }
 
     const bp = <SdbBreakpoint> { verified: false, line, id: this._breakpointId++, visible: visible, originalSource: originalSource };
@@ -955,9 +956,9 @@ export class LibSdb extends EventEmitter {
   }
   
   private verifyAllBreakpoints() : void {
-    this._breakPoints.forEach((bps, path) => {
-      this.verifyBreakpoints(path);
-    })
+    for(const file of this._files) {
+      this.verifyBreakpoints(file[0]);
+    }
   }
 
   private verifyBreakpoints(path: string) : void {
