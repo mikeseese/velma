@@ -28,54 +28,181 @@ export function GetFunctionProgramCount(bytecode, methodId) {
   }
 }
 
-export interface SdbStepData {
+export class SdbStepData {
   debuggerMessageId: any;
   source: any;
   location: any;
   contractAddress: string;
   vmData: any;
   scope: SdbAstScope[];
+
+  constructor() {
+    this.scope = [];
+  }
+
+  clone(): SdbStepData {
+    let clone = new SdbStepData();
+
+    clone.debuggerMessageId = this.debuggerMessageId;
+
+    clone.source = CircularJSON.parse(CircularJSON.stringify(this.source));
+
+    clone.location = CircularJSON.parse(CircularJSON.stringify(this.location));
+
+    clone.contractAddress = this.contractAddress;
+
+    clone.vmData = CircularJSON.parse(CircularJSON.stringify(this.vmData));
+
+    for (let i = 0; i < this.scope.length; i++) {
+      clone.scope.push(this.scope[i].clone());
+    }
+
+    return clone;
+  }
 }
 
-export interface SdbBreakpoint {
+export class SdbBreakpoint {
   id: number;
   line: number;
   verified: boolean;
   visible: boolean;
   originalSource: boolean;
+
+  constructor() {
+  }
+
+  clone(): SdbBreakpoint {
+    let clone = new SdbBreakpoint();
+
+    clone.id = this.id;
+
+    clone.line = this.line;
+
+    clone.verified = this.verified;
+
+    clone.visible = this.visible;
+
+    clone.originalSource = this.originalSource;
+
+    return clone;
+  }
 }
 
-export interface SdbStackFrame {
+export class SdbStackFrame {
   name: string;
   file: string;
   line: number;
   pc: number;
+
+  constructor() {
+  }
+
+  clone(): SdbStackFrame {
+    let clone = new SdbStackFrame();
+
+    clone.name = this.name;
+
+    clone.file = this.file;
+
+    clone.line = this.line;
+
+    clone.pc = this.pc;
+
+    return clone;
+  }
 }
 
-export interface SdbAstScope {
+export class SdbAstScope {
   id: number; // id provided by compiler
   childIndex: number | null; // index in parent's 'children' array, null if root node
   depth: number;
+
+  constructor() {
+  }
+
+  clone(): SdbAstScope {
+    let clone = new SdbAstScope();
+
+    clone.id = this.id;
+
+    clone.childIndex = this.childIndex;
+
+    clone.depth = this.depth;
+
+    return clone;
+  }
 }
 
-export interface SdbVariable {
+export class SdbVariable {
   name: string;
   type: string;
   scope: SdbAstScope;
   stackPosition: number | null;
+
+  constructor() {
+  }
+
+  clone(): SdbVariable {
+    let clone = new SdbVariable();
+
+    clone.name = this.name;
+
+    clone.type = this.type;
+
+    clone.scope = this.scope.clone();
+
+    clone.stackPosition = this.stackPosition;
+
+    return clone;
+  }
 }
 
-export interface SdbExpressionFunction {
+export class SdbExpressionFunction {
   name: string;
   args: SdbVariable[];
   argsString: string;
   reference: string;
   code: string;
+
+  constructor() {
+    this.args = [];
+  }
+
+  clone(): SdbExpressionFunction {
+    let clone = new SdbExpressionFunction();
+
+    clone.name = this.name;
+
+    for (let i = 0; i < this.args.length; i++) {
+      clone.args.push(this.args[i].clone());
+    }
+
+    clone.argsString = this.argsString;
+
+    clone.reference = this.reference;
+
+    clone.code = this.code;
+
+    return clone;
+  }
 }
 
-export interface SdbEvaluation {
+export class SdbEvaluation {
   functionName: string;
   callback: Function;
+
+  constructor() {
+  }
+
+  clone(): SdbEvaluation {
+    let clone = new SdbEvaluation();
+
+    clone.functionName = this.functionName;
+
+    clone.callback = this.callback;
+
+    return clone;
+  }
 }
 
 export type SdbVariableName = string;
@@ -99,6 +226,40 @@ export class SdbContract {
     this.pcMap = new Map<number, number>();
     this.scopeVariableMap = new Map<SdbAstScope, SdbVariableMap>();
     this.functionNames = new Map<number, string>();
+  }
+
+  clone(): SdbContract {
+    let clone = new SdbContract();
+
+    clone.name = this.name;
+
+    clone.sourcePath = this.sourcePath;
+
+    for (const v of this.pcMap) {
+      clone.pcMap.set(v[0], v[1]);
+    }
+
+    for (const variables of this.scopeVariableMap) {
+      const variablesClone = new Map<string, SdbVariable>();
+      for (const variable of variables[1]) {
+        variablesClone.set(variable[0], variable[1].clone());
+      }
+      clone.scopeVariableMap.set(variables[0].clone(), variablesClone[1]);
+    }
+
+    for (const v of this.functionNames) {
+      clone.functionNames.set(v[0], v[1]);
+    }
+
+    clone.bytecode = this.bytecode;
+
+    clone.runtimeBytecode = this.runtimeBytecode;
+
+    clone.srcmapRuntime = this.srcmapRuntime;
+
+    clone.ast = CircularJSON.parse(CircularJSON.stringify(this.ast));
+
+    return clone;
   }
 }
 
@@ -972,8 +1133,8 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
     }
 
     expression = expression + (expression.endsWith(';') ? '' : ';');
-    let contract = this._contracts[this._stepData.contractAddress];
-    let newContract = CircularJSON.parse(CircularJSON.stringify(contract));
+    let contract = this._contracts.get(this._stepData.contractAddress)!;
+    let newContract: SdbContract = contract.clone();
     let file = this._files.get(contract.sourcePath)!;
 
     const functionArgs = this.findArguments(frameId, expression);
@@ -1067,15 +1228,8 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
           const compiledContract = result.contracts[":DebugContract"];
 
           // merge compilation
-          newContract.assembly = compiledContract.assembly;
           newContract.bytecode = compiledContract.bytecode;
-          newContract.functionHashes = compiledContract.functionHashes;
-          newContract.gasEstimates = compiledContract.gasEstimates;
-          newContract.interface = compiledContract.interface;
-          newContract.metadata = compiledContract.metadata;
-          newContract.opcodes = compiledContract.opcodes;
           newContract.runtimeBytecode = compiledContract.runtimeBytecode;
-          newContract.srcmap = compiledContract.srcmap;
           newContract.srcmapRuntime = compiledContract.srcmapRuntime;
 
           // add our flair
