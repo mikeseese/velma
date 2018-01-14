@@ -244,7 +244,7 @@ export class SdbContract {
       for (const variable of variables[1]) {
         variablesClone.set(variable[0], variable[1].clone());
       }
-      clone.scopeVariableMap.set(variables[0], variablesClone[1]);
+      clone.scopeVariableMap.set(variables[0], variablesClone);
     }
 
     for (const v of this.functionNames) {
@@ -378,36 +378,46 @@ export class LibSdb extends EventEmitter {
 
     this._ongoingEvaluation = null;
   }
-  
-  private contractsChanged(data: any) {
-    // addresses changed
 
-    this._contracts = new Map<string, SdbContract>();
-
+  private applyCompilationResult(compilationResult) {
     let contractNameMap = new Map<string, SdbContract>();
 
-    const compilationResult = data.content;
-    
     const contracts = compilationResult.contracts;
-    Object.keys(contracts).forEach((key) => {
+    const contractKeys = Object.keys(contracts);
+    for (let i = 0; i < contractKeys.length; i++) {
+      const key = contractKeys[i];
       const contract = contracts[key];
-      if (contract.sourcePath !== null) {
-        if (!this._files.has(contract.sourcePath)) {
-          this._files.set(contract.sourcePath, new SdbFile(contract.sourcePath));
+      let contractPath = key.split(":");
+      const sourcePath = normalizePath(contractPath[0]);
+      if (sourcePath !== null) {
+        if (!this._files.has(sourcePath)) {
+          this._files.set(sourcePath, new SdbFile(sourcePath));
         }
 
-        let file = this._files.get(contract.sourcePath)!;
+        let file = this._files.get(sourcePath)!;
 
         if (!file.sourceCode) {
-          file.sourceCode = readFileSync(contract.sourcePath, "utf8");
+          file.sourceCode = readFileSync(sourcePath, "utf8");
           file.lineBreaks = sourceMappingDecoder.getLinebreakPositions(file.sourceCode);
         }
 
-        let sdbContract = new SdbContract();
+        let priorContractIndex: number | null = null;
+        file.contracts.forEach((contract, j) => {
+          if (contract.name === contractPath[1]) {
+            priorContractIndex = j;
+          }
+        });
 
-        let contractName = key.split(":");
-        sdbContract.name = contractName[contractName.length - 1];
-        sdbContract.sourcePath = contract.sourcePath;
+        let sdbContract: SdbContract;
+        if (priorContractIndex === null) {
+          sdbContract = new SdbContract();
+        }
+        else {
+          sdbContract = file.contracts[priorContractIndex];
+        }
+
+        sdbContract.name = contractPath[1];
+        sdbContract.sourcePath = sourcePath;
 
         const pcMap = code.util.nameOpCodes(new Buffer(contract.runtimeBytecode, 'hex'))[1];
         Object.keys(pcMap).forEach((pc) => {
@@ -426,14 +436,32 @@ export class LibSdb extends EventEmitter {
         sdbContract.srcmapRuntime = contract.srcmapRuntime;
 
         contractNameMap.set(key, sdbContract);
-        file.contracts.push(sdbContract);
+
+        if (priorContractIndex === null) {
+          file.contracts.push(sdbContract);
+        }
       }
-    });
+    };
 
     // fill in this._contracts with compilationResult.contractMap
     Object.keys(compilationResult.contractMap).forEach((address) => {
       if (contractNameMap.has(compilationResult.contractMap[address])) {
-        this._contracts.set(address, contractNameMap.get(compilationResult.contractMap[address])!)
+        if (this._contracts.has(address)) {
+          // we already have a contract, lets merge
+          const priorContract = this._contracts.get(address)!;
+          const newContract = contractNameMap.get(compilationResult.contractMap[address])!;
+
+          priorContract.pcMap = newContract.pcMap;
+          priorContract.functionNames = newContract.functionNames;
+          priorContract.bytecode = newContract.bytecode;
+          priorContract.runtimeBytecode = newContract.runtimeBytecode;
+          priorContract.srcmapRuntime = newContract.srcmapRuntime;
+
+          contractNameMap.set(compilationResult.contractMap[address], priorContract);
+        }
+        else {
+          this._contracts.set(address, contractNameMap.get(compilationResult.contractMap[address])!);
+        }
       }
     });
 
@@ -471,10 +499,11 @@ export class LibSdb extends EventEmitter {
 
     // get variable declarations for each SdbContract AST
     this._contracts.forEach((contract, address) => {
+      let newScopeVariableMap = new Map<number, SdbVariableMap>();
       astWalker.walkDetail(contract.ast, null, 0, (node, parent, depth) => {
         if (node.id) {
           // this is a new scope, add to map
-          contract.scopeVariableMap.set(node.id, new Map<string, SdbVariable>());
+          newScopeVariableMap.set(node.id, new Map<string, SdbVariable>());
   
           if (node.name === "VariableDeclaration") {
             let childIndex: number | null = null;
@@ -487,6 +516,15 @@ export class LibSdb extends EventEmitter {
               }
             }
 
+            // try to find the variable in our prior variable to get the stack position (which shouldn't have changed)
+            let stackPosition: number | null = null;
+            contract.scopeVariableMap.forEach((variables, scopeId) => {
+              const variable = variables.get(node.attributes.name);
+              if (variable && variable.scope.depth === depth) {
+                stackPosition = variable.stackPosition;
+              }
+            });
+
             let variable = new SdbVariable();
             variable.name = node.attributes.name;
             variable.type = node.attributes.type;
@@ -494,16 +532,25 @@ export class LibSdb extends EventEmitter {
             variable.scope.id = node.attributes.scope;
             variable.scope.childIndex = childIndex;
             variable.scope.depth = depth;
-            variable.stackPosition = null;
+            variable.stackPosition = stackPosition;
   
             // add the variable to the parent's scope
-            contract.scopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
+            newScopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
           }
         }
   
         return true;
       });
+      contract.scopeVariableMap = newScopeVariableMap;
     });
+  }
+  
+  private contractsChanged(data: any) {
+    // addresses changed
+
+    this._contracts = new Map<string, SdbContract>();
+
+    this.applyCompilationResult(data.content);
     
     const response = {
       "status": "ok",
@@ -1245,7 +1292,9 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
             adjustCallstackLineNumbers(newPriorUiCallstack, newContract.sourcePath, functionInsertLine, numNewLines);
           }
 
-          let result = compile(newFile.sourceCode, 0);
+          const compileInput = { sources: {} };
+          compileInput.sources[newFile.fullPath()] = newFile.sourceCode;
+          let result = compile(compileInput, 0);
           for (let i = 0; i < result.errors.length; i++) {
             const error = result.errors[i];
             let match = matchReturnTypeFromError(error);
@@ -1255,80 +1304,38 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
               const repString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (` + match[1] + `)`;
               newFile.sourceCode = newFile.sourceCode.replace(refString, repString);
               newFile.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
-              result = compile(newFile.sourceCode, 0);
+              compileInput.sources[newFile.fullPath()] = newFile.sourceCode;
+              result = compile(compileInput, 0);
             }
             else {
 
             }
           }
-          const compiledContract = result.contracts[":" + newContract.name];
 
-          // merge compilation
-          newContract.bytecode = compiledContract.bytecode;
-          newContract.runtimeBytecode = compiledContract.runtimeBytecode;
-          newContract.srcmapRuntime = compiledContract.srcmapRuntime;
+          // TODO: stop and respond if there is a compiler error of sometype
 
-          // add our flair
-          const pcMap = code.util.nameOpCodes(new Buffer(newContract.runtimeBytecode, 'hex'))[1];
-          Object.keys(pcMap).forEach((pc) => {
-            newContract.pcMap.set(parseInt(pc), pcMap[pc]);
+          result.contractMap = {};
+          this._contracts.forEach((contract, address) => {
+            result.contractMap[address] = contract.sourcePath + ":" + contract.name;
           });
 
-          newContract.functionNames = new Map<number, string>();
-          Object.keys(compiledContract.functionHashes).forEach((functionName) => {
-            const pc = GetFunctionProgramCount(newContract.runtimeBytecode, compiledContract.functionHashes[functionName]);
-            if (pc !== null) {
-              newContract.functionNames.set(pc, functionName);
-            }
-          });
-          
+          this._callStack = newCallstack;
+          this._priorUiCallStack = newPriorUiCallstack;
+
+          newFile.breakpoints = newBreakpoints;
+          newFile.lineOffsets = newLineOffsets;
+
+          this._files.set(newFile.fullPath(), newFile);
+          this._contracts.set(this._stepData.contractAddress, newContract);
+
+          this.applyCompilationResult(result);
+
           const astWalker = new util.AstWalker();
-          let newVariables = new Map<number, SdbVariableMap>();
-          astWalker.walkDetail(result.sources[""].AST, null, 0, (node, parent, depth) => {
-            if (node.id) {
-              newVariables.set(node.id, new Map<string, SdbVariable>());
-
-              if (node.name === "VariableDeclaration") {
-                let childIndex: number | null = null;
-                if (parent) {
-                  // look for the child in the parent to get the index
-                  for (let i = 0; i < parent.children.length; i++) {
-                    if (parent.children[i].id === node.id) {
-                      childIndex = i;
-                    }
-                  }
-                }
-
-                // try to find the variable in our prior variable to get the stack position (which shouldn't have changed)
-                let stackPosition: number | null = null;
-                contract.scopeVariableMap.forEach((variables, scopeId) => {
-                  const variable = variables.get(node.attributes.name);
-                  if (variable && variable.scope.depth === depth) {
-                    stackPosition = variable.stackPosition;
-                  }
-                });
-
-                let variable = new SdbVariable();
-                variable.name = node.attributes.name;
-                variable.type = node.attributes.type;
-                variable.scope = new SdbAstScope();
-                variable.scope.id = node.attributes.scope;
-                variable.scope.childIndex = childIndex;
-                variable.scope.depth = depth;
-                variable.stackPosition = stackPosition;
-
-                // add variable to the parent's scope
-                newVariables.get(variable.scope.id)!.set(variable.name, variable);
-              }
-            }
-
-            return true;
-          });
 
           const codeOffset = functionInsert.code.length + functionInsert.reference.length + 1; // 1 is for the \n after the reference insertion
 
           let sourceLocationEvalFunction = null;
-          astWalker.walk(result.sources[""].AST, (node) => {
+          astWalker.walk(this._contracts.get(this._stepData.contractAddress)!.ast, (node) => {
             if (sourceLocationEvalFunction !== null) {
               return false;
             }
@@ -1347,11 +1354,12 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
 
           const newIndex = sourceMappingDecoder.toIndex(sourceLocationEvalFunction, newContract.srcmapRuntime);
           let newPc: number | null = null;
-          Object.keys(newContract.pcMap).forEach((key, index) => {
-            if (index === newIndex) {
-              newPc = parseInt(key);
+          for(let map of newContract.pcMap) {
+            if (map[1] === newIndex) {
+              newPc = map[0];
+              break;
             }
-          });
+          }
 
           let newSourceLocation = CircularJSON.parse(CircularJSON.stringify(this._stepData.source));
           newSourceLocation.start += codeOffset;
@@ -1365,17 +1373,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
               newLine = i;
               break;
             }
-          }
-
-          this._callStack = newCallstack;
-          this._priorUiCallStack = newPriorUiCallstack;
-
-          newFile.breakpoints = newBreakpoints;
-          newFile.lineOffsets = newLineOffsets;
-          newContract.scopeVariableMap = newVariables;
-
-          this._files.set(newFile.fullPath(), newFile);
-          this._contracts.set(this._stepData.contractAddress, newContract);
+          };
 
           if (newLine !== null) {
             this.setBreakPoint(newContract.sourcePath, newLine, false, false);
