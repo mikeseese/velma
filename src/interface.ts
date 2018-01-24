@@ -12,7 +12,7 @@ export class LibSdbInterface {
 
     private _runtime: LibSdbRuntime;
 
-    private _debuggerMessageId: string;
+    private _debuggerMessageId: string | null;
 
     constructor(runtime: LibSdbRuntime) {
         this._runtime = runtime;
