@@ -1,5 +1,5 @@
 
-import { util, code } from "/home/mike/projects/remix/src/index";
+import { util } from "/home/mike/projects/remix/src/index";
 
 import { LibSdbTypes } from "./types";
 

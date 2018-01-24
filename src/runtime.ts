@@ -1,7 +1,5 @@
-import { readFileSync } from "fs";
 import { EventEmitter } from "events";
-import { util, code } from "/home/mike/projects/remix/src/index";
-import { normalize as normalizePath } from "path";
+import { util } from "/home/mike/projects/remix/src/index";
 
 import { LibSdbTypes } from "./types";
 import { LibSdbUtils } from "./utils";

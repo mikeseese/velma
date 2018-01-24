@@ -1,5 +1,4 @@
-
-import { util, code } from "/home/mike/projects/remix/src/index";
+import { util } from "/home/mike/projects/remix/src/index";
 
 const parseExpression = require("/home/mike/projects/solidity-parser/index").parse;
 const traverse = require("traverse");

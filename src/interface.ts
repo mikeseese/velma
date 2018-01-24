@@ -1,7 +1,6 @@
 
 import { Socket } from "net";
 
-import { LibSdbTypes } from "./types";
 import { LibSdbCompile } from "./compiler";
 import { LibSdbRuntime } from "./runtime";
 
