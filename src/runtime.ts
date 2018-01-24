@@ -1,78 +1,45 @@
 import { readFileSync } from "fs";
 import { EventEmitter } from "events";
 import { util, code } from "/home/mike/projects/remix/src/index";
-import { compile } from "solc";
-import { v4 as uuidv4 } from "uuid";
 import { normalize as normalizePath } from "path";
 
-import {
-    SdbStepData,
-    SdbBreakpoint,
-    SdbStackFrame,
-    SdbAstScope,
-    SdbVariable,
-    SdbExpressionFunction,
-    SdbEvaluation,
-    SdbContract,
-    SdbFile,
-    SdbVariableName,
-    SdbVariableMap,
-    SdbScopeVariableMap,
-    SdbAst,
-    SdbContractMap,
-    SdbFileMap
-} from "./types";
-
-import {
-    fileSeparator,
-    GetFunctionProgramCount,
-    adjustBreakpointLineNumbers,
-    adjustCallstackLineNumbers
-} from "./utils";
-
-import {
-    linkCompilerOutput,
-    linkContractAddress
-} from "./compiler";
+import { LibSdbTypes } from "./types";
+import { LibSdbUtils } from "./utils";
+import { LibSdbInterface } from "./interface";
+import { LibSdbBreakpoints } from "./breakpoints";
 
 const CircularJSON = require("circular-json");
 const BigNumber = require("bignumber.js");
-const traverse = require("traverse");
-const parseExpression = require("/home/mike/projects/solidity-parser/index").parse;
 const sourceMappingDecoder = new util.SourceMappingDecoder();
-
-/** Parse the error message thrown with a naive compile in order to determine the actual return type. This is the hacky alternative to parsing an AST. */
-const regexpReturnError = /Return argument type (.*) is not implicitly convertible to expected type \(type of first return variable\) bool./
-const matchReturnTypeFromError = message => message.match(regexpReturnError);
 
 export class LibSdbRuntime extends EventEmitter {
 
-    // since we want to send breakpoint events, we will assign an id to every event
-    // so that the frontend can match events with breakpoints.
-    private _breakpointId: number;
+    public _stepData: LibSdbTypes.StepData | null;
 
-    private _stepData: SdbStepData | null;
+    public _priorStepData: LibSdbTypes.StepData | null;
+    public _priorUiStepData: LibSdbTypes.StepData | null;
 
-    private _priorStepData: SdbStepData | null;
-    private _priorUiStepData: SdbStepData | null;
+    public _callStack: LibSdbTypes.StackFrame[];
+    public _priorUiCallStack: LibSdbTypes.StackFrame[] | null;
 
-    private _callStack: SdbStackFrame[];
-    private _priorUiCallStack: SdbStackFrame[] | null;
+    public _ongoingEvaluation: LibSdbTypes.Evaluation | null;
 
-    private _ongoingEvaluation: SdbEvaluation | null;
+    public _files: LibSdbTypes.FileMap;
+    public _contractsByName: LibSdbTypes.ContractMap;
+    public _contractsByAddress: LibSdbTypes.ContractMap;
 
-    public _files: SdbFileMap;
-    public _contractsByName: SdbContractMap;
-    public _contractsByAddress: SdbContractMap;
+    public _interface: LibSdbInterface;
+    public _breakpoints: LibSdbBreakpoints;
 
     constructor() {
         super();
 
-        this._files = new Map<string, SdbFile>();
-        this._contractsByName = new Map<string, SdbContract>();
-        this._contractsByAddress = new Map<string, SdbContract>();
+        this._interface = new LibSdbInterface(this);
+        this._breakpoints = new LibSdbBreakpoints(this);
 
-        this._breakpointId = 1;
+        this._files = new Map<string, LibSdbTypes.File>();
+        this._contractsByName = new Map<string, LibSdbTypes.Contract>();
+        this._contractsByAddress = new Map<string, LibSdbTypes.Contract>();
 
         this._stepData = null;
         this._priorStepData = null;
@@ -84,36 +51,17 @@ export class LibSdbRuntime extends EventEmitter {
         this._ongoingEvaluation = null;
     }
 
-    private findScope(index: number, address: string): SdbAstScope[] {
-        let scope: SdbAstScope[] = [];
-        const ast = this._contractsByAddress.get(address)!.ast;
+    private respondToDebugHook(content: any = null) {
+        // don't respond if we don't actually need to
+        if (this._stepData === null) {
+            return;
+        }
 
-        const astWalker = new util.AstWalker();
-        astWalker.walkDetail(ast, null, 0, (node, parent, depth) => {
-            const src = node.src.split(":").map((s) => { return parseInt(s); });
-            if (src.length >= 2 && src[0] <= index && index <= src[0] + src[1]) {
-                let childIndex: number | null = null;
-                if (parent) {
-                    // look for the child in the parent to get the index
-                    for (let i = 0; i < parent.children.length; i++) {
-                        if (parent.children[i].id === node.id) {
-                            childIndex = i;
-                        }
-                    }
-                }
-                let astScope = new SdbAstScope();
-                astScope.id = node.id;
-                astScope.childIndex = childIndex;
-                astScope.depth = depth;
-                scope.unshift(astScope);
-                return true;
-            }
-            else {
-                return false;
-            }
-        });
+        this._priorStepData = CircularJSON.parse(CircularJSON.stringify(this._stepData));
 
-        return scope;
+        this._interface.respondToDebugHook(content);
+
+        this._stepData = null;
     }
 
     public vmStepped(data: any) {
@@ -134,7 +82,7 @@ export class LibSdbRuntime extends EventEmitter {
         }*/
 
         if (this._contractsByAddress.get(address) === undefined) {
-            this._stepData = new SdbStepData();
+            this._stepData = new LibSdbTypes.StepData();
             this._stepData.debuggerMessageId = data.id;
             this._stepData.source = null;
             this._stepData.location = null;
@@ -175,7 +123,7 @@ export class LibSdbRuntime extends EventEmitter {
                     // push the prior function onto the stack. the current location for stack goes on when requested
                     const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
                     const functionName = node.attributes.name;
-                    let frame = new SdbStackFrame();
+                    let frame = new LibSdbTypes.StackFrame();
                     frame.name = functionName;
                     frame.file = contract.sourcePath;
                     frame.line = this._priorStepData.location.start === null ? null : this._priorStepData.location.start.line;
@@ -207,7 +155,7 @@ export class LibSdbRuntime extends EventEmitter {
 
                     // TODO: figure this out
                     // const functionName = contract.functionNames[pc];
-                    let frame = new SdbStackFrame();
+                    let frame = new LibSdbTypes.StackFrame();
                     frame.name = "external place?";
                     frame.file = contract.sourcePath;
                     frame.line = 0 //currentLocation.start === null ? null : currentLocation.start.line;
@@ -216,7 +164,7 @@ export class LibSdbRuntime extends EventEmitter {
             }
 
             // find current scope
-            const currentScope = this.findScope(sourceLocation.start, address);
+            const currentScope = LibSdbUtils.findScope(sourceLocation.start, contract.ast);
 
             // is there a variable declaration here?
             if (sourceLocation) {
@@ -236,7 +184,7 @@ export class LibSdbRuntime extends EventEmitter {
                 }
             }
 
-            this._stepData = new SdbStepData();
+            this._stepData = new LibSdbTypes.StepData();
             this._stepData.debuggerMessageId = data.id;
             this._stepData.source = sourceLocation;
             this._stepData.location = currentLocation;
@@ -314,7 +262,7 @@ export class LibSdbRuntime extends EventEmitter {
     }
 
     public start(stopOnEntry: boolean) {
-        this.verifyAllBreakpoints();
+        this._breakpoints.verifyAllBreakpoints();
 
         if (stopOnEntry) {
             // we step once
@@ -325,8 +273,8 @@ export class LibSdbRuntime extends EventEmitter {
         }
     }
 
-    public continue(reverse = false) {
-        this.run(reverse, undefined);
+    public continue(reverse = false, content: any = null) {
+        this.run(reverse, undefined, content);
     }
 
     public stepOver(reverse = false, event = 'stopOnStepOver') {
@@ -454,7 +402,7 @@ export class LibSdbRuntime extends EventEmitter {
         return false;
     }
 
-    private sendEvent(event: string, ...args: any[]) {
+    public sendEvent(event: string, ...args: any[]) {
         setImmediate(_ => {
             this.emit(event, ...args);
         });

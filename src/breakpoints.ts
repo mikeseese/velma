@@ -1,17 +1,31 @@
 
+
+import { LibSdbTypes } from "./types";
+import { LibSdbUtils } from "./utils";
+import { LibSdbRuntime } from "./runtime";
+
 export class LibSdbBreakpoints {
-    public setBreakPoint(path: string, line: number, visible: boolean = true, originalSource: boolean = true): SdbBreakpoint {
-        if (!this._files.has(path)) {
-            this._files.set(path, new SdbFile(path));
+    private _runtime: LibSdbRuntime;
+
+    private _breakpointId: number;
+
+    constructor(runtime: LibSdbRuntime) {
+        this._runtime = runtime;
+        this._breakpointId = 1;
+    }
+
+    public setBreakPoint(path: string, line: number, visible: boolean = true, originalSource: boolean = true): LibSdbTypes.Breakpoint {
+        if (!this._runtime._files.has(path)) {
+            this._runtime._files.set(path, new LibSdbTypes.File(path));
         }
-        const file = this._files.get(path)!;
+        const file = this._runtime._files.get(path)!;
 
         if (originalSource) {
             // we need to modify the line number using line offsets with the original source bp's
-            line = util.getNewLine(line, file.lineOffsets);
+            line = LibSdbUtils.getNewLine(line, file.lineOffsets);
         }
 
-        let bp = new SdbBreakpoint();
+        let bp = new LibSdbTypes.Breakpoint();
         bp.verified = false;
         bp.line = line;
         bp.id = this._breakpointId++;
@@ -29,28 +43,28 @@ export class LibSdbBreakpoints {
         return bp;
     }
 
-    private verifyAllBreakpoints(): void {
-        for (const file of this._files) {
+    public verifyAllBreakpoints(): void {
+        for (const file of this._runtime._files) {
             this.verifyBreakpoints(file[0]);
         }
     }
 
-    private verifyBreakpoints(path: string): void {
-        const file = this._files.get(path);
+    public verifyBreakpoints(path: string): void {
+        const file = this._runtime._files.get(path);
 
         if (file) {
             file.breakpoints.forEach(bp => {
                 // Temporarily validate each breakpoint
                 bp.verified = true;
-                this.sendEvent('breakpointValidated', bp);
+                this._runtime.sendEvent('breakpointValidated', bp);
 
                 // TODO: real breakpoint verification
             });
         }
     }
 
-    public clearBreakPoint(path: string, line: number): SdbBreakpoint | undefined {
-        const file = this._files.get(path); // TODO: handle when file isn't in this._files
+    public clearBreakPoint(path: string, line: number): LibSdbTypes.Breakpoint | undefined {
+        const file = this._runtime._files.get(path); // TODO: handle when file isn't in this._files
 
         if (file) {
             const index = file.breakpoints.findIndex(bp => bp.line === line);
@@ -65,7 +79,7 @@ export class LibSdbBreakpoints {
     }
 
     public clearBreakpoints(path: string): void {
-        const file = this._files.get(path);
+        const file = this._runtime._files.get(path);
 
         if (file) {
             file.breakpoints = [];

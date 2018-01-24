@@ -1,32 +1,9 @@
 
 import { Socket } from "net";
 
-import {
-    SdbStepData,
-    SdbBreakpoint,
-    SdbStackFrame,
-    SdbAstScope,
-    SdbVariable,
-    SdbExpressionFunction,
-    SdbEvaluation,
-    SdbContract,
-    SdbFile,
-    SdbVariableName,
-    SdbVariableMap,
-    SdbScopeVariableMap,
-    SdbAst,
-    SdbContractMap,
-    SdbFileMap
-} from "./types";
-
-import {
-    linkCompilerOutput,
-    linkContractAddress
-} from "./compiler";
-
-import {
-    LibSdbRuntime
-} from "./runtime";
+import { LibSdbTypes } from "./types";
+import { LibSdbCompile } from "./compiler";
+import { LibSdbRuntime } from "./runtime";
 
 const CircularJSON = require("circular-json");
 
@@ -41,13 +18,11 @@ export class LibSdbInterface {
         this._runtime = runtime;
     }
 
-    private respondToDebugHook(content: any = null) {
+    public respondToDebugHook(content: any = null) {
         // don't respond if we don't actually need to
-        if (this._stepData === null) {
+        if (this._debuggerMessageId === null) {
             return;
         }
-
-        this._priorStepData = CircularJSON.parse(CircularJSON.stringify(this._stepData));
 
         const response = {
             "status": "ok",
@@ -56,7 +31,8 @@ export class LibSdbInterface {
             "content": content
         };
         this._socket.write(CircularJSON.stringify(response));
-        this._stepData = null;
+
+        this._debuggerMessageId = null;
     }
 
     private socketHandler(dataSerialized: string) {
@@ -65,7 +41,7 @@ export class LibSdbInterface {
         const messageType = data.messageType;
 
         if (triggerType === "linkCompilerOutput") {
-            linkCompilerOutput(this._runtime._files, this._runtime._contractsByName, this._runtime._contractsByAddress, data.content);
+            LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._contractsByName, this._runtime._contractsByAddress, data.content);
 
             const response = {
                 "status": "ok",
@@ -76,7 +52,7 @@ export class LibSdbInterface {
             this._socket.write(CircularJSON.stringify(response));
         }
         else if (triggerType === "linkContractAddress") {
-            linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.name, data.content.address);
+            LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.name, data.content.address);
 
             const response = {
                 "status": "ok",
