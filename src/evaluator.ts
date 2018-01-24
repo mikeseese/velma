@@ -16,7 +16,7 @@ import { LibSdbRuntime } from "./runtime";
 const regexpReturnError = /Return argument type (.*) is not implicitly convertible to expected type \(type of first return variable\) bool./
 const matchReturnTypeFromError = message => message.match(regexpReturnError);
 
-export class LibSdbEvaluate {
+export class LibSdbEvaluator {
     private _runtime: LibSdbRuntime;
 
     constructor(runtime: LibSdbRuntime) {

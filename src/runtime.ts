@@ -7,6 +7,7 @@ import { LibSdbTypes } from "./types";
 import { LibSdbUtils } from "./utils";
 import { LibSdbInterface } from "./interface";
 import { LibSdbBreakpoints } from "./breakpoints";
+import { LibSdbEvaluator } from "./evaluator";
 
 const CircularJSON = require("circular-json");
 const BigNumber = require("bignumber.js");
@@ -30,12 +31,14 @@ export class LibSdbRuntime extends EventEmitter {
 
     public _interface: LibSdbInterface;
     public _breakpoints: LibSdbBreakpoints;
+    public _evaluator: LibSdbEvaluator;
 
     constructor() {
         super();
 
         this._interface = new LibSdbInterface(this);
         this._breakpoints = new LibSdbBreakpoints(this);
+        this._evaluator = new LibSdbEvaluator(this);
 
         this._files = new Map<string, LibSdbTypes.File>();
         this._contractsByName = new Map<string, LibSdbTypes.Contract>();
