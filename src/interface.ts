@@ -15,6 +15,8 @@ export class LibSdbInterface {
 
     constructor(runtime: LibSdbRuntime) {
         this._runtime = runtime;
+        this._socket = new Socket();
+        this._debuggerMessageId = null;
     }
 
     public respondToDebugHook(content: any = null) {
@@ -62,6 +64,7 @@ export class LibSdbInterface {
             this._socket.write(CircularJSON.stringify(response));
         }
         else if (triggerType === "step") {
+            this._debuggerMessageId = data.id;
             this._runtime.vmStepped(data);
         }
         else if (messageType === "response") {
