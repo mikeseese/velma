@@ -213,7 +213,7 @@ export class LibSdbRuntime extends EventEmitter {
                     "index": startFrame,
                     "name": functionName,
                     "file": contract.sourcePath,
-                    "line": util.getOriginalLine(this._stepData.location.start.line, file.lineOffsets)
+                    "line": LibSdbUtils.getOriginalLine(this._stepData.location.start.line, file.lineOffsets)
                 });
             }
         }
@@ -223,7 +223,7 @@ export class LibSdbRuntime extends EventEmitter {
                 "index": i + 1, // offset by one due to the current line "at the top of the stack", but not in the callstack variable
                 "name": this._callStack[i].name,
                 "file": this._callStack[i].file,
-                "line": util.getOriginalLine(this._callStack[i].line, this._files.get(this._callStack[i].file)!.lineOffsets)
+                "line": LibSdbUtils.getOriginalLine(this._callStack[i].line, this._files.get(this._callStack[i].file)!.lineOffsets)
             });
         }
 

@@ -1,8 +1,10 @@
 
 import { Socket } from "net";
+import { normalize as normalizePath } from "path";
 
 import { LibSdbCompile } from "./compiler";
 import { LibSdbRuntime } from "./runtime";
+import { LibSdbUtils } from "./utils";
 
 const CircularJSON = require("circular-json");
 
@@ -36,8 +38,14 @@ export class LibSdbInterface {
         this._debuggerMessageId = null;
     }
 
-    private socketHandler(dataSerialized: string) {
-        const data = CircularJSON.parse(dataSerialized);
+    private socketHandler(dataSerialized: Buffer | string) {
+        let data;
+        if (dataSerialized instanceof Buffer) {
+            data = CircularJSON.parse(dataSerialized.toString("utf8"));
+        }
+        else {
+            data = CircularJSON.parse(dataSerialized);
+        }
         const triggerType = data.triggerType;
         const messageType = data.messageType;
 
@@ -53,7 +61,8 @@ export class LibSdbInterface {
             this._socket.write(CircularJSON.stringify(response));
         }
         else if (triggerType === "linkContractAddress") {
-            LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.name, data.content.address);
+            const fullContractName = normalizePath(data.content.sourcePath) + ":" + data.content.contractName;
+            LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, fullContractName, data.content.address);
 
             const response = {
                 "status": "ok",
@@ -92,6 +101,7 @@ export class LibSdbInterface {
         }.bind(this));
 
         this._socket.connect(port, host, () => {
+            console.log("Connected to extension host");
             callback();
         });
 
