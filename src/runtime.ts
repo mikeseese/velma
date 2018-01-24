@@ -352,7 +352,7 @@ export class LibSdbRuntime extends EventEmitter {
                     break;
                 case "stopOnStepIn":
                     const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, { AST: contract.ast });
-                    if (callDepthChange > 0 && differentLine && node === null) {
+                    if (callDepthChange > 0 && differentLine && node !== null) {
                         this.sendEvent("stopOnStepIn");
                         return true;
                     }
