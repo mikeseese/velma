@@ -46,31 +46,18 @@ export class LibSdbInterface {
         const triggerType = data.triggerType;
         const messageType = data.messageType;
 
+        this._debuggerMessages.set(data.id, ws);
+
         if (triggerType === "linkCompilerOutput") {
             LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._contractsByName, this._runtime._contractsByAddress, data.content);
-
-            const response = {
-                "status": "ok",
-                "id": data.id,
-                "messageType": "response",
-                "content": null
-            };
-            ws.send(CircularJSON.stringify(response));
+            this.respondToDebugHook(data.id);
         }
         else if (triggerType === "linkContractAddress") {
             const fullContractName = normalizePath(data.content.sourcePath) + ":" + data.content.contractName;
             LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, fullContractName, data.content.address);
-
-            const response = {
-                "status": "ok",
-                "id": data.id,
-                "messageType": "response",
-                "content": null
-            };
-            ws.send(CircularJSON.stringify(response));
+            this.respondToDebugHook(data.id);
         }
         else if (triggerType === "step") {
-            this._debuggerMessages.set(data.id, ws);
             this._runtime.vmStepped(data);
         }
         else if (messageType === "response") {
