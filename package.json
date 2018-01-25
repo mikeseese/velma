@@ -21,9 +21,11 @@
     "net": "^1.0.2",
     "remix": "^0.1.4",
     "solc": "^0.4.18",
-    "uuid": "^3.1.0"
+    "uuid": "^3.1.0",
+    "ws": "4.0.0"
   },
   "devDependencies": {
-    "@types/node": "^8.0.53"
+    "@types/node": "^8.0.53",
+    "@types/ws": "^4.0.0"
   }
 }
