@@ -220,11 +220,6 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
 
                     // TODO: stop and respond if there is a compiler error of sometype
 
-                    result.contractMap = {};
-                    this._runtime._contractsByAddress.forEach((contract, address) => {
-                        result.contractMap[address] = contract.sourcePath + ":" + contract.name;
-                    });
-
                     this._runtime._callStack = newCallstack;
                     this._runtime._priorUiCallStack = newPriorUiCallstack;
 
@@ -235,13 +230,14 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                     this._runtime._contractsByAddress.set(this._runtime._stepData.contractAddress, newContract);
 
                     LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._contractsByName, this._runtime._contractsByAddress, result);
+                    newContract = this._runtime._contractsByAddress.get(this._runtime._stepData.contractAddress)!;
 
                     const astWalker = new util.AstWalker();
 
                     const codeOffset = functionInsert.code.length + functionInsert.reference.length + 1; // 1 is for the \n after the reference insertion
 
                     let sourceLocationEvalFunction = null;
-                    astWalker.walk(this._runtime._contractsByAddress.get(this._runtime._stepData.contractAddress)!.ast, (node) => {
+                    astWalker.walk(newContract.ast, (node) => {
                         if (sourceLocationEvalFunction !== null) {
                             return false;
                         }
