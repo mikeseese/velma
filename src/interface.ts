@@ -80,6 +80,9 @@ export class LibSdbInterface {
             ws.on("message", (message) => {
                 self.messageHandler(ws, message);
             });
+            ws.on("close", (code: number, reason: string) => {
+                self._wss.close();
+            });
         });
     }
 }

@@ -60,7 +60,7 @@ export class LibSdbRuntime extends EventEmitter {
 
         this._priorStepData = CircularJSON.parse(CircularJSON.stringify(this._stepData));
 
-        this._interface.respondToDebugHook(content);
+        this._interface.respondToDebugHook(this._stepData.debuggerMessageId, content);
 
         this._stepData = null;
     }
