@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { util, code } from "/home/mike/projects/remix/src/index";
 import { normalize as normalizePath } from "path";
-import { compile as solcCompile } from "solc";
+import { compileStandardWrapper as solcCompile, CompilerOutput } from "solc";
 
 import { LibSdbTypes } from "./types";
 import { LibSdbUtils } from "./utils";
@@ -11,68 +11,81 @@ const sourceMappingDecoder = new util.SourceMappingDecoder();
 export namespace LibSdbCompile {
     export const compile = solcCompile;
 
-    export function linkCompilerOutput(_files: LibSdbTypes.FileMap, _contractsByName: LibSdbTypes.ContractMap, _contractsByAddress: LibSdbTypes.ContractMap, compilationResult: any) {
+    export function linkCompilerOutput(_files: LibSdbTypes.FileMap, _contractsByName: LibSdbTypes.ContractMap, _contractsByAddress: LibSdbTypes.ContractMap, compilationResult: CompilerOutput): boolean {
+        if (compilationResult.sources === undefined) {
+            // cant do anything if we don't get the right data, this is invalid
+            return false;
+        }
+
         let contractNameMap = new Map<string, LibSdbTypes.Contract>();
         const astWalker = new util.AstWalker();
 
         /* -------- Go through contracts JSON -------- */
         const contracts = compilationResult.contracts;
-        const contractKeys = Object.keys(contracts);
-        for (let i = 0; i < contractKeys.length; i++) {
-            const key = contractKeys[i];
-            const contract = contracts[key];
-            let contractPath = key.split(":");
-            const sourcePath = normalizePath(contractPath[0]);
-            if (sourcePath !== null) {
-                if (!_files.has(sourcePath)) {
-                    _files.set(sourcePath, new LibSdbTypes.File(sourcePath));
+        const fileKeys = Object.keys(contracts);
+        for (let i = 0; i < fileKeys.length; i++) {
+            const sourcePath = fileKeys[i];
+            const contractKeys = Object.keys(contracts[sourcePath]);
+            for (let j = 0; j < contractKeys.length; j++) {
+                const contractName = contractKeys[j];
+                const contract = contracts[sourcePath][contractName];
+                if (contract.evm.deployedBytecode === undefined || contract.evm.deployedBytecode.sourceMap === undefined) {
+                    // cant do anything if we don't get the right data, just ignore this
+                    continue;
                 }
-
-                let file = _files.get(sourcePath)!;
-
-                if (!file.sourceCode) {
-                    file.sourceCode = readFileSync(sourcePath, "utf8");
-                    file.lineBreaks = sourceMappingDecoder.getLinebreakPositions(file.sourceCode);
-                }
-
-                let priorContractIndex: number | null = null;
-                file.contracts.forEach((contract, j) => {
-                    if (contract.name === contractPath[1]) {
-                        priorContractIndex = j;
+                if (sourcePath !== null) {
+                    if (!_files.has(sourcePath)) {
+                        _files.set(sourcePath, new LibSdbTypes.File(sourcePath));
                     }
-                });
 
-                let sdbContract: LibSdbTypes.Contract;
-                if (priorContractIndex === null) {
-                    sdbContract = new LibSdbTypes.Contract();
-                }
-                else {
-                    sdbContract = file.contracts[priorContractIndex];
-                }
+                    let file = _files.get(sourcePath)!;
 
-                sdbContract.name = contractPath[1];
-                sdbContract.sourcePath = sourcePath;
-
-                const pcMap = code.util.nameOpCodes(new Buffer(contract.runtimeBytecode, 'hex'))[1];
-                Object.keys(pcMap).forEach((pc) => {
-                    sdbContract.pcMap.set(parseInt(pc), pcMap[pc]);
-                });
-
-                Object.keys(contract.functionHashes).forEach((functionName) => {
-                    const pc = LibSdbUtils.GetFunctionProgramCount(contract.runtimeBytecode, contract.functionHashes[functionName]);
-                    if (pc !== null) {
-                        sdbContract.functionNames.set(pc, functionName);
+                    if (!file.sourceCode) {
+                        file.sourceCode = readFileSync(sourcePath, "utf8");
+                        file.lineBreaks = sourceMappingDecoder.getLinebreakPositions(file.sourceCode);
                     }
-                });
 
-                sdbContract.bytecode = contract.bytecode;
-                sdbContract.runtimeBytecode = contract.runtimeBytecode;
-                sdbContract.srcmapRuntime = contract.srcmapRuntime;
+                    let priorContractIndex: number | null = null;
+                    file.contracts.forEach((contract, j) => {
+                        if (contract.name === contractName) {
+                            priorContractIndex = j;
+                        }
+                    });
 
-                contractNameMap.set(key, sdbContract);
+                    let sdbContract: LibSdbTypes.Contract;
+                    if (priorContractIndex === null) {
+                        sdbContract = new LibSdbTypes.Contract();
+                    }
+                    else {
+                        sdbContract = file.contracts[priorContractIndex];
+                    }
 
-                if (priorContractIndex === null) {
-                    file.contracts.push(sdbContract);
+                    sdbContract.name = contractName;
+                    sdbContract.sourcePath = sourcePath;
+
+                    const pcMap = code.util.nameOpCodes(new Buffer(contract.evm.deployedBytecode.object, 'hex'))[1];
+                    Object.keys(pcMap).forEach((pc) => {
+                        sdbContract.pcMap.set(parseInt(pc), pcMap[pc]);
+                    });
+
+                    if (contract.evm.methodIdentifiers !== undefined) {
+                        Object.keys(contract.evm.methodIdentifiers).forEach((functionName) => {
+                            const pc = LibSdbUtils.GetFunctionProgramCount(contract.evm.deployedBytecode!.object, contract.evm.methodIdentifiers![functionName]);
+                            if (pc !== null) {
+                                sdbContract.functionNames.set(pc, functionName);
+                            }
+                        });
+                    }
+
+                    sdbContract.bytecode = contract.evm.bytecode.object;
+                    sdbContract.runtimeBytecode = contract.evm.deployedBytecode.object;
+                    sdbContract.srcmapRuntime = contract.evm.deployedBytecode.sourceMap;
+
+                    contractNameMap.set(sourcePath + ":" + contractName, sdbContract);
+
+                    if (priorContractIndex === null) {
+                        file.contracts.push(sdbContract);
+                    }
                 }
             }
         };
@@ -86,7 +99,7 @@ export namespace LibSdbCompile {
 
             if (file) {
                 // assign AST from the compilationResult.sources variable to each SdbFile
-                file.ast = compilationResult.sources[source].AST;
+                file.ast = compilationResult.sources[source].ast;
 
                 // split SdbFile AST to the contract levels
                 astWalker.walk(file.ast, (node) => {
@@ -157,6 +170,8 @@ export namespace LibSdbCompile {
             }
             _contractsByName.set(key, contract);
         });
+
+        return true;
     }
 
     export function linkContractAddress(_contractsByName: LibSdbTypes.ContractMap, _contractsByAddress: LibSdbTypes.ContractMap, name: string, address: string) {
