@@ -152,7 +152,7 @@ export class LibSdbRuntime extends EventEmitter {
                 }
                 else if (pc in contract.functionNames) {
                     // jump in to external function
-                    // this is the JUMPDEST of a function we just entered mike is cute
+                    // this is the JUMPDEST of a function we just entered
 
                     // TODO: figure this out
                     // const functionName = contract.functionNames[pc];
@@ -274,8 +274,8 @@ export class LibSdbRuntime extends EventEmitter {
         }
     }
 
-    public continue(reverse = false, content: any = null) {
-        this.run(reverse, undefined, content);
+    public continue(reverse = false, content: any = null, event: string | undefined = undefined) {
+        this.run(reverse, event, content);
     }
 
     public stepOver(reverse = false, event = 'stopOnStepOver') {
@@ -382,7 +382,7 @@ export class LibSdbRuntime extends EventEmitter {
             priorLine = this._priorUiStepData.location.start.line;
         }
 
-        const bps = file.breakpoints.filter(bp => bp.line === ln && (priorLine === null || ln !== priorLine));
+        const bps = file.breakpoints.filter(bp => bp.line === ln && (priorLine === null || ln !== priorLine) && ((bp.visible && stepEvent !== "stopOnEvalBreakpoint") || (!bp.visible && stepEvent === "stopOnEvalBreakpoint")));
 
         if (bps.length > 0) {
             // send 'stopped' event

@@ -296,7 +296,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         "code": newContract.runtimeBytecode,
                         "pc": newPc
                     };
-                    this._runtime.continue(false, content);
+                    this._runtime.continue(false, content, "stopOnEvalBreakpoint");
                 }
             }
         }
