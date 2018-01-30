@@ -192,6 +192,9 @@ export class LibSdbRuntime extends EventEmitter {
             this._stepData.contractAddress = address;
             this._stepData.vmData = data.content;
             this._stepData.scope = currentScope;
+            if (data.exceptionError !== undefined) {
+                this._stepData.exception = data.exceptionError;
+            }
 
             this.sendEvent("step");
         }
@@ -340,6 +343,11 @@ export class LibSdbRuntime extends EventEmitter {
         const ln = this._stepData.location.start.line;
         console.log(this._stepData.vmData.pc + " - " + ln + " - " + JSON.stringify(this._stepData.vmData.opcode));
 
+        if (this._stepData.exception !== undefined) {
+            this.sendEvent("stopOnException");
+            return true;
+        }
+
         if (this._priorUiCallStack && this._priorUiStepData) {
             const callDepthChange = this._callStack.length - this._priorUiCallStack.length;
             const differentLine = ln !== this._priorUiStepData.location.start.line;
@@ -367,14 +375,6 @@ export class LibSdbRuntime extends EventEmitter {
                     break;
             }
         }
-
-        // TODO: figure out if an exception happened? do exceptions happen in the VM?
-        /*if (line.indexOf('exception') >= 0) {
-          this.sendEvent('stopOnException');
-          return true;
-        }*/
-
-        // TODO: Stop on out of gas. I'd call that an exception
 
         // is there a breakpoint?
         let priorLine = null;

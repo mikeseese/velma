@@ -57,7 +57,7 @@ export class LibSdbInterface {
             LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, fullContractName, data.content.address);
             this.respondToDebugHook(data.id);
         }
-        else if (triggerType === "step") {
+        else if (triggerType === "step" || triggerType === "exception") {
             this._runtime.vmStepped(data);
         }
         else if (messageType === "response") {
@@ -82,6 +82,7 @@ export class LibSdbInterface {
             });
             ws.on("close", (code: number, reason: string) => {
                 self._wss.close();
+                self._runtime.sendEvent("end");
             });
         });
     }

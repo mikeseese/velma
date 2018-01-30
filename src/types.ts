@@ -12,6 +12,7 @@ export namespace LibSdbTypes {
         contractAddress: string;
         vmData: any;
         scope: AstScope[];
+        exception?: any;
 
         constructor() {
             this.scope = [];
