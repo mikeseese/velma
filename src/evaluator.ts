@@ -10,6 +10,7 @@ import { LibSdbTypes } from "./types";
 import { LibSdbUtils } from "./utils";
 import { LibSdbCompile } from "./compiler";
 import { LibSdbRuntime } from "./runtime";
+import { CompilerOutput, CompilerInput } from "solc";
 
 /** Parse the error message thrown with a naive compile in order to determine the actual return type. This is the hacky alternative to parsing an AST. */
 const regexpReturnError = /Return argument type (.*) is not implicitly convertible to expected type \(type of first return variable\) bool./
@@ -198,23 +199,36 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         LibSdbUtils.adjustCallstackLineNumbers(newPriorUiCallstack, newContract.sourcePath, functionInsertLine, numNewLines);
                     }
 
-                    const compileInput = { sources: {} };
-                    compileInput.sources[newFile.fullPath()] = newFile.sourceCode;
-                    let result = LibSdbCompile.compile(compileInput, 0);
-                    for (let i = 0; i < result.errors.length; i++) {
-                        const error = result.errors[i];
-                        let match = matchReturnTypeFromError(error);
-                        if (match) {
-                            // return type
-                            const refString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (bool)`;
-                            const repString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (` + match[1] + `)`;
-                            newFile.sourceCode = newFile.sourceCode.replace(refString, repString);
-                            newFile.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
-                            compileInput.sources[newFile.fullPath()] = newFile.sourceCode;
-                            result = LibSdbCompile.compile(compileInput, 0);
-                        }
-                        else {
-
+                    let compileInput: CompilerInput = {
+                        language: "Solidity",
+                        settings: {
+                            optimizer: {
+                                enabled: false
+                            },
+                            outputSelection: {
+                                "*": {
+                                    "*": [ "abi", "evm.bytecode.object" ]
+                                }
+                            }
+                        },
+                        sources: {}
+                    };
+                    compileInput.sources[newFile.fullPath()] = { content: newFile.sourceCode };
+                    let result: CompilerOutput = JSON.parse(LibSdbCompile.compile(JSON.stringify(compileInput)));
+                    if (result.errors !== undefined) {
+                        for (let i = 0; i < result.errors!.length; i++) {
+                            const error = result.errors![i];
+                            let match = matchReturnTypeFromError(error.message);
+                            if (match) {
+                                // return type
+                                const refString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (bool)`;
+                                const repString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (` + match[1] + `)`;
+                                newFile.sourceCode = newFile.sourceCode.replace(refString, repString);
+                                newFile.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
+                                compileInput.sources[newFile.fullPath()] = { content: newFile.sourceCode };
+                                result = JSON.parse(LibSdbCompile.compile(JSON.stringify(compileInput)));
+                                break;
+                            }
                         }
                     }
 
