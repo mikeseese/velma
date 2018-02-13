@@ -123,7 +123,7 @@ export class LibSdbRuntime extends EventEmitter {
 
                     // push the prior function onto the stack. the current location for stack goes on when requested
                     const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
-                    const functionName = node.attributes.name;
+                    const functionName = node === null ? "(anonymous function)" : node.attributes.name;
                     let frame = new LibSdbTypes.StackFrame();
                     frame.name = functionName;
                     frame.file = contract.sourcePath;
