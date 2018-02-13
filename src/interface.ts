@@ -1,4 +1,3 @@
-import { normalize as normalizePath } from "path";
 import * as WebSocket from "ws";
 
 import { LibSdbCompile } from "./compiler";
@@ -49,12 +48,11 @@ export class LibSdbInterface {
         this._debuggerMessages.set(data.id, ws);
 
         if (triggerType === "linkCompilerOutput") {
-            LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._contractsByName, this._runtime._contractsByAddress, data.content);
+            LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.sourceRootPath, data.content.compilationResult);
             this.respondToDebugHook(data.id);
         }
         else if (triggerType === "linkContractAddress") {
-            const fullContractName = normalizePath(data.content.sourcePath) + ":" + data.content.contractName;
-            LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, fullContractName, data.content.address);
+            LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.contractName, data.content.address);
             this.respondToDebugHook(data.id);
         }
         else if (triggerType === "step" || triggerType === "exception") {

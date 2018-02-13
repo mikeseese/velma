@@ -11,7 +11,7 @@ const sourceMappingDecoder = new util.SourceMappingDecoder();
 export namespace LibSdbCompile {
     export const compile = solcCompile;
 
-    export function linkCompilerOutput(_files: LibSdbTypes.FileMap, _contractsByName: LibSdbTypes.ContractMap, _contractsByAddress: LibSdbTypes.ContractMap, compilationResult: CompilerOutput): boolean {
+    export function linkCompilerOutput(_files: LibSdbTypes.FileMap, _contractsByName: LibSdbTypes.ContractMap, _contractsByAddress: LibSdbTypes.ContractMap, sourceRootPath: string, compilationResult: CompilerOutput): boolean {
         if (compilationResult.sources === undefined) {
             // cant do anything if we don't get the right data, this is invalid
             return false;
@@ -24,24 +24,25 @@ export namespace LibSdbCompile {
         const contracts = compilationResult.contracts;
         const fileKeys = Object.keys(contracts);
         for (let i = 0; i < fileKeys.length; i++) {
-            const sourcePath = fileKeys[i];
-            const contractKeys = Object.keys(contracts[sourcePath]);
+            const absoluteSourcePath = normalizePath(sourceRootPath + LibSdbUtils.fileSeparator + fileKeys[i]);
+            const relativeSourcePath = fileKeys[i];
+            const contractKeys = Object.keys(contracts[relativeSourcePath]);
             for (let j = 0; j < contractKeys.length; j++) {
                 const contractName = contractKeys[j];
-                const contract = contracts[sourcePath][contractName];
+                const contract = contracts[relativeSourcePath][contractName];
                 if (contract.evm.deployedBytecode === undefined || contract.evm.deployedBytecode.sourceMap === undefined) {
                     // cant do anything if we don't get the right data, just ignore this
                     continue;
                 }
-                if (sourcePath !== null) {
-                    if (!_files.has(sourcePath)) {
-                        _files.set(sourcePath, new LibSdbTypes.File(sourcePath));
+                if (absoluteSourcePath !== null) {
+                    if (!_files.has(absoluteSourcePath)) {
+                        _files.set(absoluteSourcePath, new LibSdbTypes.File(absoluteSourcePath));
                     }
 
-                    let file = _files.get(sourcePath)!;
+                    let file = _files.get(absoluteSourcePath)!;
 
                     if (!file.sourceCode) {
-                        file.sourceCode = readFileSync(sourcePath, "utf8");
+                        file.sourceCode = readFileSync(absoluteSourcePath, "utf8");
                         file.lineBreaks = sourceMappingDecoder.getLinebreakPositions(file.sourceCode);
                     }
 
@@ -61,7 +62,7 @@ export namespace LibSdbCompile {
                     }
 
                     sdbContract.name = contractName;
-                    sdbContract.sourcePath = sourcePath;
+                    sdbContract.sourcePath = absoluteSourcePath;
 
                     const pcMap = code.util.nameOpCodes(new Buffer(contract.evm.deployedBytecode.object, 'hex'))[1];
                     Object.keys(pcMap).forEach((pc) => {
@@ -81,7 +82,7 @@ export namespace LibSdbCompile {
                     sdbContract.runtimeBytecode = contract.evm.deployedBytecode.object;
                     sdbContract.srcmapRuntime = contract.evm.deployedBytecode.sourceMap;
 
-                    contractNameMap.set(sourcePath + ":" + contractName, sdbContract);
+                    contractNameMap.set(contractName, sdbContract);
 
                     if (priorContractIndex === null) {
                         file.contracts.push(sdbContract);
@@ -94,17 +95,17 @@ export namespace LibSdbCompile {
         const keys = Object.keys(compilationResult.sources);
         for (let i = 0; i < keys.length; i++) {
             const source = keys[i];
-            const sourcePath = normalizePath(source);
+            const sourcePath = normalizePath(sourceRootPath + LibSdbUtils.fileSeparator + source);
             const file = _files.get(sourcePath);
 
             if (file) {
                 // assign AST from the compilationResult.sources variable to each SdbFile
-                file.ast = compilationResult.sources[source].ast;
+                file.ast = compilationResult.sources[source].legacyAST;
 
                 // split SdbFile AST to the contract levels
                 astWalker.walk(file.ast, (node) => {
                     if (node.name === "ContractDefinition") {
-                        const contractKey = normalizePath(file.fullPath() + ":" + node.attributes.name);
+                        const contractKey = node.attributes.name;
                         if (contractNameMap.has(contractKey)) {
                             const contract = contractNameMap.get(contractKey)!;
                             contract.ast = JSON.parse(JSON.stringify(node));
