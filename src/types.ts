@@ -1,6 +1,6 @@
 import { normalize as normalizePath } from "path";
 
-import { LibSdbUtils } from "./utils";
+import { LibSdbUtils } from "./utils/utils";
 
 const CircularJSON = require("circular-json");
 

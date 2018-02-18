@@ -1,5 +1,5 @@
 import { LibSdbTypes } from "./types";
-import { LibSdbUtils } from "./utils";
+import { LibSdbUtils } from "./utils/utils";
 import { LibSdbRuntime } from "./runtime";
 
 export class LibSdbBreakpoints {

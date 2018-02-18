@@ -1,15 +1,13 @@
 import { EventEmitter } from "events";
-import { util } from "/home/mike/projects/remix/src/index";
 
 import { LibSdbTypes } from "./types";
-import { LibSdbUtils } from "./utils";
+import { LibSdbUtils } from "./utils/utils";
 import { LibSdbInterface } from "./interface";
 import { LibSdbBreakpoints } from "./breakpoints";
 import { LibSdbEvaluator } from "./evaluator";
 
 const CircularJSON = require("circular-json");
 const BigNumber = require("bignumber.js");
-const sourceMappingDecoder = new util.SourceMappingDecoder();
 
 export class LibSdbRuntime extends EventEmitter {
 
@@ -114,15 +112,15 @@ export class LibSdbRuntime extends EventEmitter {
             if (index === undefined) {
                 //
             }
-            const sourceLocation = sourceMappingDecoder.atIndex(index, contract.srcmapRuntime);
-            const currentLocation = sourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, file.lineBreaks);
+            const sourceLocation = LibSdbUtils.SourceMappingDecoder.atIndex(index, contract.srcmapRuntime);
+            const currentLocation = LibSdbUtils.SourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, file.lineBreaks);
 
             if (this._priorStepData && this._priorStepData.source) {
                 if (this._priorStepData.source.jump === "i") {
                     // jump in
 
                     // push the prior function onto the stack. the current location for stack goes on when requested
-                    const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
+                    const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
                     const functionName = node === null ? "(anonymous function)" : node.attributes.name;
                     let frame = new LibSdbTypes.StackFrame();
                     frame.name = functionName;
@@ -132,7 +130,7 @@ export class LibSdbRuntime extends EventEmitter {
                 }
                 else if (this._priorStepData.source.jump === "o") {
                     // jump out, we should be at a JUMPDEST currently
-                    const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
+                    const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
                     if (node !== null) {
                         const functionName = node.attributes.name;
                         if (this._ongoingEvaluation !== null && this._ongoingEvaluation.functionName === functionName) {
@@ -169,7 +167,7 @@ export class LibSdbRuntime extends EventEmitter {
 
             // is there a variable declaration here?
             if (sourceLocation) {
-                const variableDeclarationNode = sourceMappingDecoder.findNodeAtSourceLocation("VariableDeclaration", sourceLocation, { AST: contract.ast });
+                const variableDeclarationNode = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("VariableDeclaration", sourceLocation, { AST: contract.ast });
                 if (variableDeclarationNode) {
                     const scope = variableDeclarationNode.attributes.scope;
                     const variables = contract.scopeVariableMap.get(scope);
@@ -200,16 +198,13 @@ export class LibSdbRuntime extends EventEmitter {
         }
     }
 
-    /**
-     * Returns a fake 'stacktrace' where every 'stackframe' is a word from the current line.
-     */
     public stack(startFrame: number, endFrame: number): any {
         const frames = new Array<any>();
 
         if (this._stepData !== null) {
             const contract = this._contractsByAddress.get(this._stepData.contractAddress)!;
             const file = this._files.get(contract.sourcePath)!;
-            const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, { AST: contract.ast });
+            const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, { AST: contract.ast });
             const functionName = node.attributes.name;
             if (startFrame === 0 && this._stepData.location && this._stepData.location.start) {
                 frames.push({
@@ -359,7 +354,7 @@ export class LibSdbRuntime extends EventEmitter {
                     }
                     break;
                 case "stopOnStepIn":
-                    const node = sourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, { AST: contract.ast });
+                    const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, { AST: contract.ast });
                     if (callDepthChange > 0 && differentLine && node !== null) {
                         this.sendEvent("stopOnStepIn");
                         return true;

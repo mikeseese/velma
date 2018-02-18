@@ -1,17 +1,13 @@
-import { util } from "/home/mike/projects/remix/src/index";
-
 const parseExpression = require("/home/mike/projects/solidity-parser/index").parse;
 const traverse = require("traverse");
 const uuidv4 = require("uuid").v4;
-const sourceMappingDecoder = new util.SourceMappingDecoder();
 const CircularJSON = require("circular-json");
 
 import { LibSdbTypes } from "./types";
-import { LibSdbUtils } from "./utils";
+import { LibSdbUtils } from "./utils/utils";
 import { LibSdbCompile } from "./compiler";
 import { LibSdbRuntime } from "./runtime";
 import { CompilerOutput, CompilerInput } from "solc";
-
 /** Parse the error message thrown with a naive compile in order to determine the actual return type. This is the hacky alternative to parsing an AST. */
 const regexpReturnError = /Return argument type (.*) is not implicitly convertible to expected type \(type of first return variable\) bool./
 const matchReturnTypeFromError = message => message.match(regexpReturnError);
@@ -165,7 +161,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                 const insertPosition = newFile.lineBreaks[currentLine - 1] + 1;
 
                 newFile.sourceCode = [newFile.sourceCode.slice(0, insertPosition), functionInsert.reference + "\n", newFile.sourceCode.slice(insertPosition)].join('');
-                newFile.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
+                newFile.lineBreaks = LibSdbUtils.SourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
 
                 // Adjust line numbers
                 LibSdbUtils.addLineOffset(currentLine, 1, newLineOffsets);
@@ -188,7 +184,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
 
                 if (functionInsertPosition !== null && functionInsertLine !== null) {
                     newFile.sourceCode = [newFile.sourceCode.slice(0, functionInsertPosition), functionInsert.code, newFile.sourceCode.slice(functionInsertPosition)].join('');
-                    newFile.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
+                    newFile.lineBreaks = LibSdbUtils.SourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
 
                     // Adjust line numbers
                     const numNewLines = (functionInsert.code.match(/\n/g) || []).length;
@@ -224,7 +220,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                                 const refString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (bool)`;
                                 const repString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (` + match[1] + `)`;
                                 newFile.sourceCode = newFile.sourceCode.replace(refString, repString);
-                                newFile.lineBreaks = sourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
+                                newFile.lineBreaks = LibSdbUtils.SourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
                                 compileInput.sources[newFile.fullPath()] = { content: newFile.sourceCode };
                                 result = JSON.parse(LibSdbCompile.compile(JSON.stringify(compileInput)));
                                 break;
@@ -243,10 +239,10 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                     this._runtime._files.set(newFile.fullPath(), newFile);
                     this._runtime._contractsByAddress.set(this._runtime._stepData.contractAddress, newContract);
 
-                    LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._contractsByName, this._runtime._contractsByAddress, result);
+                    LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._contractsByName, this._runtime._contractsByAddress, "TODO:", result);
                     newContract = this._runtime._contractsByAddress.get(this._runtime._stepData.contractAddress)!;
 
-                    const astWalker = new util.AstWalker();
+                    const astWalker = new LibSdbUtils.AstWalker();
 
                     const codeOffset = functionInsert.code.length + functionInsert.reference.length + 1; // 1 is for the \n after the reference insertion
 
@@ -259,7 +255,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         if (node.name === "FunctionCall") {
                             for (let i = 0; i < node.children.length; i++) {
                                 if (node.children[i].attributes.value === functionInsert.name) {
-                                    sourceLocationEvalFunction = sourceMappingDecoder.sourceLocationFromAstNode(node);
+                                    sourceLocationEvalFunction = LibSdbUtils.SourceMappingDecoder.sourceLocationFromAstNode(node);
                                     return true;
                                 }
                             }
@@ -268,7 +264,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         return true;
                     });
 
-                    const newIndex = sourceMappingDecoder.toIndex(sourceLocationEvalFunction, newContract.srcmapRuntime);
+                    const newIndex = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocationEvalFunction, newContract.srcmapRuntime);
                     let newPc: number | null = null;
                     for (let map of newContract.pcMap) {
                         if (map[1] === newIndex) {

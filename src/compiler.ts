@@ -1,12 +1,9 @@
 import { readFileSync } from "fs";
-import { util, code } from "/home/mike/projects/remix/src/index";
 import { normalize as normalizePath } from "path";
 import { compileStandardWrapper as solcCompile, CompilerOutput } from "solc";
 
 import { LibSdbTypes } from "./types";
-import { LibSdbUtils } from "./utils";
-
-const sourceMappingDecoder = new util.SourceMappingDecoder();
+import { LibSdbUtils } from "./utils/utils";
 
 export namespace LibSdbCompile {
     export const compile = solcCompile;
@@ -18,7 +15,7 @@ export namespace LibSdbCompile {
         }
 
         let contractNameMap = new Map<string, LibSdbTypes.Contract>();
-        const astWalker = new util.AstWalker();
+        const astWalker = new LibSdbUtils.AstWalker();
 
         /* -------- Go through contracts JSON -------- */
         const contracts = compilationResult.contracts;
@@ -43,7 +40,7 @@ export namespace LibSdbCompile {
 
                     if (!file.sourceCode) {
                         file.sourceCode = readFileSync(absoluteSourcePath, "utf8");
-                        file.lineBreaks = sourceMappingDecoder.getLinebreakPositions(file.sourceCode);
+                        file.lineBreaks = LibSdbUtils.SourceMappingDecoder.getLinebreakPositions(file.sourceCode);
                     }
 
                     let priorContractIndex: number | null = null;
@@ -64,7 +61,7 @@ export namespace LibSdbCompile {
                     sdbContract.name = contractName;
                     sdbContract.sourcePath = absoluteSourcePath;
 
-                    const pcMap = code.util.nameOpCodes(new Buffer(contract.evm.deployedBytecode.object, 'hex'))[1];
+                    const pcMap = LibSdbUtils.nameOpCodes(new Buffer(contract.evm.deployedBytecode.object, 'hex'))[1];
                     Object.keys(pcMap).forEach((pc) => {
                         sdbContract.pcMap.set(parseInt(pc), pcMap[pc]);
                     });
