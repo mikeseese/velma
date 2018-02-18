@@ -1,6 +1,6 @@
 
 // NOTE: This file was copied/ported to TypeScript from the ethereum/remix project at https://github.com/ethereum/remix
-// History of modifications made from Remix are not captured in this repository. See https://github.com/seeseplusplus/remix for history
+// History of modifications made from Remix are not captured in this repository. See https://github.com/seeseplusplus/remix/tree/introduce-sdb for history
 // Remix (and therefore this file) is under the MIT License:
 /* The MIT License (MIT)
  *
