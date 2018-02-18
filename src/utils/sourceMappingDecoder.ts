@@ -1,4 +1,5 @@
 // NOTE: This file was copied/ported to TypeScript from the ethereum/remix project at https://github.com/ethereum/remix
+// History of modifications made from Remix are not captured in this repository. See https://github.com/seeseplusplus/remix for history
 // Remix is under the MIT License:
 /* The MIT License (MIT)
  *
