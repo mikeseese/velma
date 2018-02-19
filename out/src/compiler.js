@@ -152,8 +152,8 @@ var LibSdbCompile;
     function linkContractAddress(_contractsByName, _contractsByAddress, name, address) {
         if (_contractsByName.has(name)) {
             const contract = _contractsByName.get(name);
-            contract.address = address;
-            _contractsByAddress.set(address, contract);
+            contract.address = address.toLowerCase();
+            _contractsByAddress.set(contract.address, contract);
         }
     }
     LibSdbCompile.linkContractAddress = linkContractAddress;
