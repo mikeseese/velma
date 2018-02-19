@@ -66,7 +66,7 @@ export class LibSdbRuntime extends EventEmitter {
     public vmStepped(data: any) {
         // step through code
         const pc = data.content.pc;
-        const address = (new Buffer(data.content.address.data)).toString("hex");
+        const address = (new Buffer(data.content.address.data)).toString("hex").toLowerCase();
 
         /*if (!(address in this._contracts)) {
           console.log("address " + address + " not monitored");

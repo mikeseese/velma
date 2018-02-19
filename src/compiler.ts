@@ -175,7 +175,7 @@ export namespace LibSdbCompile {
     export function linkContractAddress(_contractsByName: LibSdbTypes.ContractMap, _contractsByAddress: LibSdbTypes.ContractMap, name: string, address: string) {
         if (_contractsByName.has(name)) {
             const contract = _contractsByName.get(name)!;
-            contract.address = address;
+            contract.address = address.toLowerCase();
             _contractsByAddress.set(address, contract);
         }
     }
