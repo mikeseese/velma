@@ -176,7 +176,7 @@ export namespace LibSdbCompile {
         if (_contractsByName.has(name)) {
             const contract = _contractsByName.get(name)!;
             contract.address = address.toLowerCase();
-            _contractsByAddress.set(address, contract);
+            _contractsByAddress.set(contract.address, contract);
         }
     }
 }
