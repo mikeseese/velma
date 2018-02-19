@@ -25,7 +25,7 @@
  * SOFTWARE.
  */
 
- import { getOpcode } from "./opcodes";
+import { getOpcode } from "./opcodes";
 
 export function nameOpCodes(raw: Buffer) {
     let pushData: Buffer = new Buffer('');

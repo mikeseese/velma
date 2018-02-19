@@ -1,6 +1,5 @@
 import { LibSdbTypes } from "../types";
 import { AstWalker } from "./astWalker";
-import { getOpcode } from "./opcodes";
 
 export const fileSeparator: string = /^win/.test(process.platform) ? "\\" : "/";
 

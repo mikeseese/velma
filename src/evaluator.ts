@@ -8,6 +8,7 @@ import { LibSdbUtils } from "./utils/utils";
 import { LibSdbCompile } from "./compiler";
 import { LibSdbRuntime } from "./runtime";
 import { CompilerOutput, CompilerInput } from "solc";
+
 /** Parse the error message thrown with a naive compile in order to determine the actual return type. This is the hacky alternative to parsing an AST. */
 const regexpReturnError = /Return argument type (.*) is not implicitly convertible to expected type \(type of first return variable\) bool./
 const matchReturnTypeFromError = message => message.match(regexpReturnError);
