@@ -137,7 +137,13 @@ export class LibSdbRuntime extends EventEmitter {
                             // get variable at top of stack
                             // TODO: add support for multiple variable evaluations
 
-                            const buf = new Buffer(data.content.stack[data.content.stack.length - 1].data);
+                            let buf;
+                            if (data.content.stack[data.content.stack.length - 1].data !== undefined) {
+                                buf = new Buffer(data.content.stack[data.content.stack.length - 1].data);
+                            }
+                            else {
+                                buf = new Buffer(data.content.stack[data.content.stack.length - 1]);
+                            }
                             const num = new BigNumber("0x" + buf.toString("hex"));
 
                             this._ongoingEvaluation.callback(num.toString());
@@ -244,7 +250,13 @@ export class LibSdbRuntime extends EventEmitter {
                 for (const name of names) {
                     const variable = scopeVars.get(name);
                     if (variable && variable.stackPosition !== null && stack.length > variable.stackPosition) {
-                        const buf = new Buffer(stack[variable.stackPosition].data);
+                        let buf;
+                        if (stack[variable.stackPosition].data !== undefined) {
+                            buf = new Buffer(stack[variable.stackPosition].data);
+                        }
+                        else {
+                            buf = new Buffer(stack[variable.stackPosition]);
+                        }
                         const num = new BigNumber("0x" + buf.toString("hex"));
                         variables.push({
                             name: name,
