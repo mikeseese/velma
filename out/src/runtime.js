@@ -98,14 +98,7 @@ class LibSdbRuntime extends events_1.EventEmitter {
                         if (this._ongoingEvaluation !== null && this._ongoingEvaluation.functionName === functionName) {
                             // get variable at top of stack
                             // TODO: add support for multiple variable evaluations
-                            let buf;
-                            if (data.content.stack[data.content.stack.length - 1].data !== undefined) {
-                                buf = new Buffer(data.content.stack[data.content.stack.length - 1].data);
-                            }
-                            else {
-                                buf = new Buffer(data.content.stack[data.content.stack.length - 1]);
-                            }
-                            const num = new BigNumber("0x" + buf.toString("hex"));
+                            const num = new BigNumber(data.content.stack[data.content.stack.length - 1]);
                             this._ongoingEvaluation.callback(num.toString());
                             this._ongoingEvaluation = null;
                         }
@@ -197,14 +190,7 @@ class LibSdbRuntime extends events_1.EventEmitter {
                 for (const name of names) {
                     const variable = scopeVars.get(name);
                     if (variable && variable.stackPosition !== null && stack.length > variable.stackPosition) {
-                        let buf;
-                        if (stack[variable.stackPosition].data !== undefined) {
-                            buf = new Buffer(stack[variable.stackPosition].data);
-                        }
-                        else {
-                            buf = new Buffer(stack[variable.stackPosition]);
-                        }
-                        const num = new BigNumber("0x" + buf.toString("hex"));
+                        const num = new BigNumber(stack[variable.stackPosition]);
                         variables.push({
                             name: name,
                             type: variable.type,
