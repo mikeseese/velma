@@ -98,7 +98,7 @@ class LibSdbRuntime extends events_1.EventEmitter {
                         if (this._ongoingEvaluation !== null && this._ongoingEvaluation.functionName === functionName) {
                             // get variable at top of stack
                             // TODO: add support for multiple variable evaluations
-                            const num = new BigNumber(data.content.stack[data.content.stack.length - 1]);
+                            const num = new BigNumber("0x" + data.content.stack[data.content.stack.length - 1]);
                             this._ongoingEvaluation.callback(num.toString());
                             this._ongoingEvaluation = null;
                         }
@@ -190,7 +190,7 @@ class LibSdbRuntime extends events_1.EventEmitter {
                 for (const name of names) {
                     const variable = scopeVars.get(name);
                     if (variable && variable.stackPosition !== null && stack.length > variable.stackPosition) {
-                        const num = new BigNumber(stack[variable.stackPosition]);
+                        const num = new BigNumber("0x" + stack[variable.stackPosition]);
                         variables.push({
                             name: name,
                             type: variable.type,
