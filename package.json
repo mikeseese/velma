@@ -17,6 +17,7 @@
   },
   "homepage": "https://gitlab.com/seeseplusplus/solidity-debugger#README",
   "dependencies": {
+    "bignumber.js": "^6.0.0",
     "circular-json": "^0.4.0",
     "net": "^1.0.2",
     "solc": "^0.4.18",
