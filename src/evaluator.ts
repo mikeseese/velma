@@ -1,4 +1,4 @@
-const parseExpression = require("/home/mike/projects/solidity-parser/index").parse;
+const parseExpression = require("solidity-parser").parse;
 const traverse = require("traverse");
 const uuidv4 = require("uuid").v4;
 const CircularJSON = require("circular-json");
