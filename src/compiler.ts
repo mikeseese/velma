@@ -1,5 +1,5 @@
 import { readFileSync } from "fs";
-import { normalize as normalizePath } from "path";
+import { resolve as resolvePath, dirname } from "path";
 import { compileStandardWrapper as solcCompile, CompilerOutput } from "solc";
 
 import { LibSdbTypes } from "./types";
@@ -21,7 +21,7 @@ export namespace LibSdbCompile {
         const contracts = compilationResult.contracts;
         const fileKeys = Object.keys(contracts);
         for (let i = 0; i < fileKeys.length; i++) {
-            const absoluteSourcePath = normalizePath(sourceRootPath + LibSdbUtils.fileSeparator + fileKeys[i]);
+            const absoluteSourcePath = resolvePath(sourceRootPath, fileKeys[i]);
             const relativeSourcePath = fileKeys[i];
             const contractKeys = Object.keys(contracts[relativeSourcePath]);
             for (let j = 0; j < contractKeys.length; j++) {
@@ -33,10 +33,15 @@ export namespace LibSdbCompile {
                 }
                 if (absoluteSourcePath !== null) {
                     if (!_files.has(absoluteSourcePath)) {
-                        _files.set(absoluteSourcePath, new LibSdbTypes.File(absoluteSourcePath));
+                        _files.set(absoluteSourcePath, new LibSdbTypes.File(sourceRootPath, relativeSourcePath));
                     }
 
                     let file = _files.get(absoluteSourcePath)!;
+
+                    // force correct source root; if breakpoints are set earlier, the source root
+                    //   may have been defaulted to '/'
+                    file.sourceRoot = sourceRootPath;
+                    file.relativeDirectory = dirname(relativeSourcePath);
 
                     if (!file.sourceCode) {
                         file.sourceCode = readFileSync(absoluteSourcePath, "utf8");
@@ -92,7 +97,7 @@ export namespace LibSdbCompile {
         const keys = Object.keys(compilationResult.sources);
         for (let i = 0; i < keys.length; i++) {
             const source = keys[i];
-            const sourcePath = normalizePath(sourceRootPath + LibSdbUtils.fileSeparator + source);
+            const sourcePath = resolvePath(sourceRootPath, source);
             const file = _files.get(sourcePath);
 
             if (file) {

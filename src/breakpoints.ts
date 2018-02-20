@@ -14,7 +14,7 @@ export class LibSdbBreakpoints {
 
     public setBreakPoint(path: string, line: number, visible: boolean = true, originalSource: boolean = true): LibSdbTypes.Breakpoint {
         if (!this._runtime._files.has(path)) {
-            this._runtime._files.set(path, new LibSdbTypes.File(path));
+            this._runtime._files.set(path, new LibSdbTypes.File("/", path));
         }
         const file = this._runtime._files.get(path)!;
 

@@ -1,6 +1,4 @@
-import { normalize as normalizePath } from "path";
-
-import { LibSdbUtils } from "./utils/utils";
+import { resolve as resolvePath, dirname, basename } from "path";
 
 const CircularJSON = require("circular-json");
 
@@ -244,7 +242,8 @@ export namespace LibSdbTypes {
     export type ContractMap = Map<string, Contract>; // key is address or name
 
     export class File {
-        public path: string;
+        public sourceRoot: string;
+        public relativeDirectory: string;
         public name: string;
         public contracts: Contract[];
         public breakpoints: Breakpoint[];
@@ -253,22 +252,23 @@ export namespace LibSdbTypes {
         public sourceCode: string;
         public lineBreaks: number[];
 
-        constructor(fullPath: string) {
+        constructor(sourceRoot: string, relativePath: string) {
             this.contracts = [];
             this.breakpoints = [];
             this.lineOffsets = new Map<number, number>();
             this.lineBreaks = [];
 
-            this.path = fullPath.substring(0, fullPath.lastIndexOf("/"));
-            this.name = fullPath.substring(fullPath.lastIndexOf("/"));
+            this.sourceRoot = sourceRoot;
+            this.relativeDirectory = dirname(relativePath);
+            this.name = basename(relativePath);
         }
 
         public fullPath() {
-            return normalizePath(this.path + LibSdbUtils.fileSeparator + this.name);
+            return resolvePath(this.sourceRoot, this.relativeDirectory, this.name);
         }
 
         clone(): File {
-            let clone = new File(this.fullPath());
+            let clone = new File(this.sourceRoot, resolvePath(this.relativeDirectory, this.name));
 
             for (let i = 0; i < this.contracts.length; i++) {
                 clone.contracts.push(this.contracts[i].clone());

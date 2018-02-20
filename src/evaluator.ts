@@ -204,13 +204,20 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                             },
                             outputSelection: {
                                 "*": {
-                                    "*": [ "abi", "evm.bytecode.object" ]
+                                    "*": [
+                                        "abi",
+                                        "evm.bytecode.object",
+                                        "evm.deployedBytecode.object",
+                                        "evm.deployedBytecode.sourceMap",
+                                        "evm.methodIdentifiers"
+                                    ],
+                                    "": [ "legacyAST" ]
                                 }
                             }
                         },
                         sources: {}
                     };
-                    compileInput.sources[newFile.fullPath()] = { content: newFile.sourceCode };
+                    compileInput.sources[newFile.name] = { content: newFile.sourceCode };
                     let result: CompilerOutput = JSON.parse(LibSdbCompile.compile(JSON.stringify(compileInput)));
                     if (result.errors !== undefined) {
                         for (let i = 0; i < result.errors!.length; i++) {
@@ -222,7 +229,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                                 const repString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (` + match[1] + `)`;
                                 newFile.sourceCode = newFile.sourceCode.replace(refString, repString);
                                 newFile.lineBreaks = LibSdbUtils.SourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
-                                compileInput.sources[newFile.fullPath()] = { content: newFile.sourceCode };
+                                compileInput.sources[newFile.name] = { content: newFile.sourceCode };
                                 result = JSON.parse(LibSdbCompile.compile(JSON.stringify(compileInput)));
                                 break;
                             }
@@ -265,49 +272,54 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         return true;
                     });
 
-                    const newIndex = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocationEvalFunction, newContract.srcmapRuntime);
-                    let newPc: number | null = null;
-                    for (let map of newContract.pcMap) {
-                        if (map[1] === newIndex) {
-                            newPc = map[0];
-                            break;
+                    if (sourceLocationEvalFunction !== null) {
+                        const newIndex = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocationEvalFunction, newContract.srcmapRuntime);
+                        let newPc: number | null = null;
+                        for (let map of newContract.pcMap) {
+                            if (map[1] === newIndex) {
+                                newPc = map[0];
+                                break;
+                            }
                         }
-                    }
 
-                    let newSourceLocation = CircularJSON.parse(CircularJSON.stringify(this._runtime._stepData.source));
-                    newSourceLocation.start += codeOffset;
-                    let newLine: number | null = null;
-                    for (let i = 0; i < newFile.lineBreaks.length; i++) {
-                        if (i === 0 && newSourceLocation.start < newFile.lineBreaks[i]) {
-                            newLine = i;
-                            break;
-                        }
-                        else if (i > 0 && newFile.lineBreaks[i - 1] < newSourceLocation.start && newSourceLocation.start < newFile.lineBreaks[i]) {
-                            newLine = i;
-                            break;
-                        }
-                    };
+                        let newSourceLocation = CircularJSON.parse(CircularJSON.stringify(this._runtime._stepData.source));
+                        newSourceLocation.start += codeOffset;
+                        let newLine: number | null = null;
+                        for (let i = 0; i < newFile.lineBreaks.length; i++) {
+                            if (i === 0 && newSourceLocation.start < newFile.lineBreaks[i]) {
+                                newLine = i;
+                                break;
+                            }
+                            else if (i > 0 && newFile.lineBreaks[i - 1] < newSourceLocation.start && newSourceLocation.start < newFile.lineBreaks[i]) {
+                                newLine = i;
+                                break;
+                            }
+                        };
 
-                    if (newLine !== null) {
-                        this._runtime._breakpoints.setBreakPoint(newContract.sourcePath, newLine, false, false);
+                        if (newLine !== null) {
+                            this._runtime._breakpoints.setBreakPoint(newContract.sourcePath, newLine, false, false);
+                        }
+                        else {
+                            // TODO: handles this better
+                            console.log("ERROR: We could not find the line of after we're evaluating...but we're going to execute anyway? shrug");
+                        }
+
+                        this._runtime._ongoingEvaluation = new LibSdbTypes.Evaluation();
+                        this._runtime._ongoingEvaluation.functionName = functionInsert.name;
+                        this._runtime._ongoingEvaluation.callback = callback;
+
+                        // push the code
+                        const content = {
+                            "type": "putCodeRequest",
+                            "address": this._runtime._stepData.contractAddress,
+                            "code": newContract.runtimeBytecode,
+                            "pc": newPc
+                        };
+                        this._runtime.continue(false, content, "stopOnEvalBreakpoint");
                     }
                     else {
-                        // TODO: handles this better
-                        console.log("ERROR: We could not find the line of after we're evaluating...but we're going to execute anyway? shrug");
+                        callback("Error: Couldn't find the sourceLocation of the evaluation function; that's weird.")
                     }
-
-                    this._runtime._ongoingEvaluation = new LibSdbTypes.Evaluation();
-                    this._runtime._ongoingEvaluation.functionName = functionInsert.name;
-                    this._runtime._ongoingEvaluation.callback = callback;
-
-                    // push the code
-                    const content = {
-                        "type": "putCodeRequest",
-                        "address": this._runtime._stepData.contractAddress,
-                        "code": newContract.runtimeBytecode,
-                        "pc": newPc
-                    };
-                    this._runtime.continue(false, content, "stopOnEvalBreakpoint");
                 }
             }
         }

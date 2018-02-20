@@ -1,8 +1,6 @@
 import { LibSdbTypes } from "../types";
 import { AstWalker } from "./astWalker";
 
-export const fileSeparator: string = /^win/.test(process.platform) ? "\\" : "/";
-
 // bytecode is a hex string of the bytecode without the preceding '0x'
 // methodId is the SHA3 hash of the ABI for this function
 // returns the first occurence of the following bytecode sequence:
