@@ -1,4 +1,4 @@
-import { resolve as resolvePath, dirname, basename } from "path";
+import { join as joinPath, dirname, basename } from "path";
 
 const CircularJSON = require("circular-json");
 
@@ -264,11 +264,11 @@ export namespace LibSdbTypes {
         }
 
         public fullPath() {
-            return resolvePath(this.sourceRoot, this.relativeDirectory, this.name);
+            return joinPath(this.sourceRoot, this.relativeDirectory, this.name);
         }
 
         clone(): File {
-            let clone = new File(this.sourceRoot, resolvePath(this.relativeDirectory, this.name));
+            let clone = new File(this.sourceRoot, joinPath(this.relativeDirectory, this.name));
 
             for (let i = 0; i < this.contracts.length; i++) {
                 clone.contracts.push(this.contracts[i].clone());

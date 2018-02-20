@@ -1,5 +1,5 @@
 import { readFileSync } from "fs";
-import { resolve as resolvePath, dirname } from "path";
+import { join as joinPath, dirname } from "path";
 import { compileStandardWrapper as solcCompile, CompilerOutput } from "solc";
 
 import { LibSdbTypes } from "./types";
@@ -21,7 +21,7 @@ export namespace LibSdbCompile {
         const contracts = compilationResult.contracts;
         const fileKeys = Object.keys(contracts);
         for (let i = 0; i < fileKeys.length; i++) {
-            const absoluteSourcePath = resolvePath(sourceRootPath, fileKeys[i]);
+            const absoluteSourcePath = joinPath(sourceRootPath, fileKeys[i]);
             const relativeSourcePath = fileKeys[i];
             const contractKeys = Object.keys(contracts[relativeSourcePath]);
             for (let j = 0; j < contractKeys.length; j++) {
@@ -97,7 +97,7 @@ export namespace LibSdbCompile {
         const keys = Object.keys(compilationResult.sources);
         for (let i = 0; i < keys.length; i++) {
             const source = keys[i];
-            const sourcePath = resolvePath(sourceRootPath, source);
+            const sourcePath = joinPath(sourceRootPath, source);
             const file = _files.get(sourcePath);
 
             if (file) {
