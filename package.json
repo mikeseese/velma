@@ -11,7 +11,11 @@
     "type": "git",
     "url": "git+ssh://git@gitlab.com/seeseplusplus/solidity-debugger.git"
   },
-  "author": "Mike Seese",
+  "publisher": "SeesePlusPlus",
+  "author": {
+    "name": "Mike Seese",
+    "email": "seesemichaelj@gmail.com"
+  },
   "license": "MIT",
   "bugs": {
     "url": "https://gitlab.com/seeseplusplus/solidity-debugger/issues"
