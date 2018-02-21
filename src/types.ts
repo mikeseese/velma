@@ -135,6 +135,7 @@ export namespace LibSdbTypes {
     export class Variable {
         name: string;
         type: VariableValueType;
+        originalType: string;
         refType: VariableRefType;
         arrayIsDynamic: boolean; // false for non-arrays
         arrayLength: number; // 0 for non-arrays
@@ -152,6 +153,14 @@ export namespace LibSdbTypes {
             clone.name = this.name;
 
             clone.type = this.type;
+
+            clone.originalType = this.originalType;
+
+            clone.refType = this.refType;
+
+            clone.arrayIsDynamic = this.arrayIsDynamic;
+
+            clone.arrayLength = this.arrayLength;
 
             clone.scope = this.scope.clone();
 
@@ -280,9 +289,11 @@ export namespace LibSdbTypes {
 
     export class Evaluation {
         functionName: string;
+        returnVariable: Variable;
         callback: Function;
 
         constructor() {
+            this.returnVariable = new Variable();
         }
 
         clone(): Evaluation {

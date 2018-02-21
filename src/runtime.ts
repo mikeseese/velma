@@ -7,7 +7,6 @@ import { LibSdbBreakpoints } from "./breakpoints";
 import { LibSdbEvaluator } from "./evaluator";
 
 const CircularJSON = require("circular-json");
-const BigNumber = require("bignumber.js");
 
 export class LibSdbRuntime extends EventEmitter {
 
@@ -137,9 +136,10 @@ export class LibSdbRuntime extends EventEmitter {
                             // get variable at top of stack
                             // TODO: add support for multiple variable evaluations
 
-                            const num = new BigNumber("0x" + data.content.stack[data.content.stack.length - 1]);
+                            this._ongoingEvaluation.returnVariable.stackPosition = data.content.stack.length - 1;
 
-                            this._ongoingEvaluation.callback(num.toString());
+                            const returnString = this._ongoingEvaluation.returnVariable.valueToString(data.content.stack, data.content.memory, {});
+                            this._ongoingEvaluation.callback(returnString); // TODO: storage
 
                             this._ongoingEvaluation = null;
                         }

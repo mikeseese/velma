@@ -139,74 +139,15 @@ export namespace LibSdbCompile {
                                         });
 
                                         let variable = new LibSdbTypes.Variable();
+                                        const varType: string = node.attributes.type || "";
                                         variable.name = node.attributes.name;
+                                        variable.originalType = varType;
                                         variable.scope = new LibSdbTypes.AstScope();
                                         variable.scope.id = node.attributes.scope;
                                         variable.scope.childIndex = childIndex;
                                         variable.scope.depth = depth;
                                         variable.stackPosition = stackPosition;
-                                        const varType: string = node.attributes.type || "";
-                                        if (node.attributes.stateVariable === true) {
-                                            variable.location = LibSdbTypes.VariableLocation.Storage;
-                                        }
-                                        else {
-                                            if (node.attributes.storageLocation === "default") {
-                                                // look at the type to figure out where it goes
-                                                // if value type
-                                                let isReferenceType: boolean = false;
-                                                isReferenceType = isReferenceType || varType.startsWith("struct"); // struct
-                                                isReferenceType = isReferenceType || varType.includes("[") && varType.includes("]"); // array
-                                                // TODO: mapping
-                                                if (isReferenceType) {
-                                                    if (parent.name === "ParameterList") {
-                                                        variable.location = LibSdbTypes.VariableLocation.Memory;
-                                                    }
-                                                    else {
-                                                        variable.location = LibSdbTypes.VariableLocation.Storage;
-                                                    }
-                                                }
-                                                else {
-                                                    // value type
-                                                    variable.location = LibSdbTypes.VariableLocation.Stack;
-                                                }
-                                            }
-                                            else if (node.attributes.storageLocation === "storage") {
-                                                variable.location = LibSdbTypes.VariableLocation.Storage;
-                                            }
-                                            else if (node.attributes.storageLocation === "memory") {
-                                                variable.location = LibSdbTypes.VariableLocation.Memory;
-                                            }
-                                            else {
-                                                // default to stack i guess, probably shouldnt get here though
-                                                variable.location = LibSdbTypes.VariableLocation.Stack;
-                                            }
-                                        }
-                                        if (varType.match(/bool/g)) {
-                                            variable.type = LibSdbTypes.VariableValueType.Boolean;
-                                        }
-                                        else if (varType.match(/uint/g)) {
-                                            variable.type = LibSdbTypes.VariableValueType.UnsignedInteger;
-                                        }
-                                        else if (varType.match(/.*(?:^|[^u])int.*/g)) {
-                                            variable.type = LibSdbTypes.VariableValueType.Integer;
-                                        }
-                                        else if (varType.match(/address/g)) {
-                                            variable.type = LibSdbTypes.VariableValueType.Address;
-                                        }
-                                        else if (varType.match(/(bytes)(([1-9]|[12][0-9]|3[0-2])\b)/g)) {
-                                            variable.type = LibSdbTypes.VariableValueType.FixedByteArray;
-                                        }
-                                        // TODO: FixedPoint when its implemented in solidity
-                                        // TODO: Enum
-                                        // TODO: Function
-                                        variable.refType = LibSdbTypes.VariableRefType.None;
-                                        const arrayExpression: RegExp = /\[([0-9]*)\]/g;
-                                        const arrayMatch = arrayExpression.exec(varType);
-                                        if(arrayMatch) {
-                                            variable.refType = LibSdbTypes.VariableRefType.Array;
-                                            variable.arrayIsDynamic = false; // TODO: support dynamic sized arrays
-                                            variable.arrayLength = parseInt(arrayMatch[1]) || 0;
-                                        }
+                                        LibSdbUtils.applyVariableType(variable, node.attributes.stateVariable, node.attributes.storageLocation, parent.name);
 
                                         // add the variable to the parent's scope
                                         newScopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
