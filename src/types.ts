@@ -1,4 +1,5 @@
 import { join as joinPath, dirname, basename } from "path";
+import { LibSdbUtils } from "./utils/utils";
 
 const CircularJSON = require("circular-json");
 
@@ -106,11 +107,41 @@ export namespace LibSdbTypes {
         }
     }
 
+    export enum VariableLocation {
+        Stack,
+        Memory,
+        Storage
+    }
+
+    export enum VariableValueType {
+        Boolean,
+        UnsignedInteger,
+        Integer,
+        FixedPoint,
+        Address,
+        FixedByteArray,
+        Enum,
+        Function,
+        None
+    }
+
+    export enum VariableRefType {
+        Array,
+        Struct,
+        Mapping,
+        None
+    }
+
     export class Variable {
         name: string;
-        type: string;
+        type: VariableValueType;
+        refType: VariableRefType;
+        arrayIsDynamic: boolean; // false for non-arrays
+        arrayLength: number; // 0 for non-arrays
+        // TODO: struct info
         scope: AstScope;
         stackPosition: number | null;
+        location: VariableLocation;
 
         constructor() {
         }
@@ -127,6 +158,53 @@ export namespace LibSdbTypes {
             clone.stackPosition = this.stackPosition;
 
             return clone;
+        }
+
+        typeToString(): string {
+            return "";
+        }
+
+        valueToString(stack: string[], memory: (number | null)[], storage: any): string {
+            let v: string = "";
+            switch (this.location) {
+                case VariableLocation.Stack:
+                    v = this.stackValueToString(stack);
+                    break;
+                case VariableLocation.Memory:
+                    v = this.memoryValueToString(stack, memory);
+                    break;
+                case VariableLocation.Storage:
+                    v = this.storageValueToString();
+                    break;
+                default:
+                    break;
+            }
+            return v;
+        }
+
+        stackValueToString(stack: string[]): string {
+            if (this.stackPosition !== null && stack.length > this.stackPosition) {
+                // stack
+                return LibSdbUtils.interperetValue(this.type, stack[this.stackPosition]);
+            }
+            else {
+                return "";
+            }
+        }
+
+        memoryValueToString(stack: string[], memory: (number | null)[]): string {
+            if (this.stackPosition !== null && stack.length > this.stackPosition) {
+                // stack
+                //const memoryLocation = parseInt(stack[this.stackPosition], 16);
+                return ""; // TODO:
+            }
+            else {
+                return "";
+            }
+        }
+
+        storageValueToString(): string {
+            return "";
         }
     }
 
