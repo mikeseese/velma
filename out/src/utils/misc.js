@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const types_1 = require("../types");
 const astWalker_1 = require("./astWalker");
+const BigNumber = require("bignumber.js");
 // bytecode is a hex string of the bytecode without the preceding '0x'
 // methodId is the SHA3 hash of the ABI for this function
 // returns the first occurence of the following bytecode sequence:
@@ -93,6 +94,66 @@ function findScope(index, ast) {
     return scope;
 }
 exports.findScope = findScope;
+function interperetValue(variableType, valueHexString) {
+    let v = "";
+    let num;
+    switch (variableType) {
+        case types_1.LibSdbTypes.VariableValueType.Boolean:
+            v = valueHexString === "1" ? "true" : "false";
+            break;
+        case types_1.LibSdbTypes.VariableValueType.UnsignedInteger:
+            num = new BigNumber("0x" + valueHexString);
+            v = num.toString();
+            break;
+        case types_1.LibSdbTypes.VariableValueType.Integer:
+            let isPositive = true;
+            if (valueHexString.length === 64) {
+                // could be 2s complement
+                if (parseInt(valueHexString[0], 16) >= 8) {
+                    // 2s complement
+                    isPositive = false;
+                    valueHexString = valueHexString.replace(/f/g, "1111").replace(/1/g, "2").replace(/0/g, "3").replace(/2/g, "0").replace(/3/, "1");
+                }
+            }
+            num = new BigNumber((isPositive ? "" : "-") + "0x" + valueHexString);
+            if (!isPositive) {
+                num = num.minus(1);
+            }
+            v = num.toString();
+            break;
+        case types_1.LibSdbTypes.VariableValueType.FixedPoint:
+            // not supported yet in Solidity (2/21/2018) per solidity.readthedocs.io
+            break;
+        case types_1.LibSdbTypes.VariableValueType.Address:
+            v = '"' + valueHexString + '"';
+            break;
+        case types_1.LibSdbTypes.VariableValueType.FixedByteArray:
+            const byteArrayStr = valueHexString.match(/.{2}/g);
+            let byteArray;
+            if (byteArrayStr !== null) {
+                byteArray = byteArrayStr.map((val, idx) => {
+                    return parseInt(val, 16);
+                });
+            }
+            else {
+                byteArray = [];
+            }
+            v = JSON.stringify(byteArray);
+            break;
+        case types_1.LibSdbTypes.VariableValueType.Enum:
+            // TODO:
+            break;
+        case types_1.LibSdbTypes.VariableValueType.Function:
+            // TODO:
+            break;
+        case types_1.LibSdbTypes.VariableValueType.None:
+        default:
+            v = "";
+            break;
+    }
+    return v;
+}
+exports.interperetValue = interperetValue;
 /*
    Binary Search:
    Assumes that @arg array is sorted increasingly
@@ -115,4 +176,69 @@ function findLowerBound(target, array) {
     return start - 1;
 }
 exports.findLowerBound = findLowerBound;
+function applyVariableType(variable, stateVariable, storageLocation, parentName) {
+    const varType = variable.originalType;
+    if (stateVariable === true) {
+        variable.location = types_1.LibSdbTypes.VariableLocation.Storage;
+    }
+    else {
+        if (storageLocation === "default") {
+            // look at the type to figure out where it goes
+            // if value type
+            let isReferenceType = false;
+            isReferenceType = isReferenceType || varType.startsWith("struct"); // struct
+            isReferenceType = isReferenceType || varType.includes("[") && varType.includes("]"); // array
+            // TODO: mapping
+            if (isReferenceType) {
+                if (parentName === "ParameterList") {
+                    variable.location = types_1.LibSdbTypes.VariableLocation.Memory;
+                }
+                else {
+                    variable.location = types_1.LibSdbTypes.VariableLocation.Storage;
+                }
+            }
+            else {
+                // value type
+                variable.location = types_1.LibSdbTypes.VariableLocation.Stack;
+            }
+        }
+        else if (storageLocation === "storage") {
+            variable.location = types_1.LibSdbTypes.VariableLocation.Storage;
+        }
+        else if (storageLocation === "memory") {
+            variable.location = types_1.LibSdbTypes.VariableLocation.Memory;
+        }
+        else {
+            // default to stack i guess, probably shouldnt get here though
+            variable.location = types_1.LibSdbTypes.VariableLocation.Stack;
+        }
+    }
+    if (varType.match(/bool/g)) {
+        variable.type = types_1.LibSdbTypes.VariableValueType.Boolean;
+    }
+    else if (varType.match(/uint/g)) {
+        variable.type = types_1.LibSdbTypes.VariableValueType.UnsignedInteger;
+    }
+    else if (varType.match(/.*(?:^|[^u])int.*/g)) {
+        variable.type = types_1.LibSdbTypes.VariableValueType.Integer;
+    }
+    else if (varType.match(/address/g)) {
+        variable.type = types_1.LibSdbTypes.VariableValueType.Address;
+    }
+    else if (varType.match(/(bytes)(([1-9]|[12][0-9]|3[0-2])\b)/g)) {
+        variable.type = types_1.LibSdbTypes.VariableValueType.FixedByteArray;
+    }
+    // TODO: FixedPoint when its implemented in solidity
+    // TODO: Enum
+    // TODO: Function
+    variable.refType = types_1.LibSdbTypes.VariableRefType.None;
+    const arrayExpression = /\[([0-9]*)\]/g;
+    const arrayMatch = arrayExpression.exec(varType);
+    if (arrayMatch) {
+        variable.refType = types_1.LibSdbTypes.VariableRefType.Array;
+        variable.arrayIsDynamic = false; // TODO: support dynamic sized arrays
+        variable.arrayLength = parseInt(arrayMatch[1]) || 0;
+    }
+}
+exports.applyVariableType = applyVariableType;
 //# sourceMappingURL=misc.js.map

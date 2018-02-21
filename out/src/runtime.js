@@ -7,7 +7,6 @@ const interface_1 = require("./interface");
 const breakpoints_1 = require("./breakpoints");
 const evaluator_1 = require("./evaluator");
 const CircularJSON = require("circular-json");
-const BigNumber = require("bignumber.js");
 class LibSdbRuntime extends events_1.EventEmitter {
     constructor() {
         super();
@@ -98,8 +97,9 @@ class LibSdbRuntime extends events_1.EventEmitter {
                         if (this._ongoingEvaluation !== null && this._ongoingEvaluation.functionName === functionName) {
                             // get variable at top of stack
                             // TODO: add support for multiple variable evaluations
-                            const num = new BigNumber("0x" + data.content.stack[data.content.stack.length - 1]);
-                            this._ongoingEvaluation.callback(num.toString());
+                            this._ongoingEvaluation.returnVariable.stackPosition = data.content.stack.length - 1;
+                            const returnString = this._ongoingEvaluation.returnVariable.valueToString(data.content.stack, data.content.memory, {});
+                            this._ongoingEvaluation.callback(returnString); // TODO: storage
                             this._ongoingEvaluation = null;
                         }
                     }
@@ -129,7 +129,16 @@ class LibSdbRuntime extends events_1.EventEmitter {
                         const names = variables.keys();
                         for (const name of names) {
                             if (name === variableDeclarationNode.attributes.name) {
-                                variables.get(name).stackPosition = data.content.stack.length;
+                                let variable = variables.get(name);
+                                if (variable.location === types_1.LibSdbTypes.VariableLocation.Stack) {
+                                    variable.stackPosition = data.content.stack.length;
+                                }
+                                else if (variable.location === types_1.LibSdbTypes.VariableLocation.Memory) {
+                                    variable.stackPosition = data.content.stack.length - 1; // must prepend it onto the stack for memory
+                                }
+                                if (variable.location === types_1.LibSdbTypes.VariableLocation.Storage) {
+                                    variable.stackPosition = data.content.stack.length;
+                                }
                                 break;
                             }
                         }
@@ -182,6 +191,8 @@ class LibSdbRuntime extends events_1.EventEmitter {
         let variables = [];
         if (this._stepData !== null) {
             const stack = this._stepData.vmData.stack;
+            const memory = this._stepData.vmData.memory;
+            const storage = {}; // TODO:
             const contract = this._contractsByAddress.get(this._stepData.contractAddress);
             for (let i = 0; i < this._stepData.scope.length; i++) {
                 const scope = this._stepData.scope[i];
@@ -189,12 +200,12 @@ class LibSdbRuntime extends events_1.EventEmitter {
                 const names = scopeVars.keys();
                 for (const name of names) {
                     const variable = scopeVars.get(name);
-                    if (variable && variable.stackPosition !== null && stack.length > variable.stackPosition) {
-                        const num = new BigNumber("0x" + stack[variable.stackPosition]);
+                    if (variable) {
+                        // TODO: more advanced array display
                         variables.push({
                             name: name,
-                            type: variable.type,
-                            value: num.toString(),
+                            type: variable.typeToString(),
+                            value: variable.valueToString(stack, memory, storage),
                             variablesReference: 0
                         });
                     }

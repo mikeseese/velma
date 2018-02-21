@@ -120,13 +120,15 @@ var LibSdbCompile;
                                             }
                                         });
                                         let variable = new types_1.LibSdbTypes.Variable();
+                                        const varType = node.attributes.type || "";
                                         variable.name = node.attributes.name;
-                                        variable.type = node.attributes.type;
+                                        variable.originalType = varType;
                                         variable.scope = new types_1.LibSdbTypes.AstScope();
                                         variable.scope.id = node.attributes.scope;
                                         variable.scope.childIndex = childIndex;
                                         variable.scope.depth = depth;
                                         variable.stackPosition = stackPosition;
+                                        utils_1.LibSdbUtils.applyVariableType(variable, node.attributes.stateVariable, node.attributes.storageLocation, parent.name);
                                         // add the variable to the parent's scope
                                         newScopeVariableMap.get(variable.scope.id).set(variable.name, variable);
                                     }

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const path_1 = require("path");
+const utils_1 = require("./utils/utils");
 const CircularJSON = require("circular-json");
 var LibSdbTypes;
 (function (LibSdbTypes) {
@@ -60,6 +61,31 @@ var LibSdbTypes;
         }
     }
     LibSdbTypes.AstScope = AstScope;
+    let VariableLocation;
+    (function (VariableLocation) {
+        VariableLocation[VariableLocation["Stack"] = 0] = "Stack";
+        VariableLocation[VariableLocation["Memory"] = 1] = "Memory";
+        VariableLocation[VariableLocation["Storage"] = 2] = "Storage";
+    })(VariableLocation = LibSdbTypes.VariableLocation || (LibSdbTypes.VariableLocation = {}));
+    let VariableValueType;
+    (function (VariableValueType) {
+        VariableValueType[VariableValueType["Boolean"] = 0] = "Boolean";
+        VariableValueType[VariableValueType["UnsignedInteger"] = 1] = "UnsignedInteger";
+        VariableValueType[VariableValueType["Integer"] = 2] = "Integer";
+        VariableValueType[VariableValueType["FixedPoint"] = 3] = "FixedPoint";
+        VariableValueType[VariableValueType["Address"] = 4] = "Address";
+        VariableValueType[VariableValueType["FixedByteArray"] = 5] = "FixedByteArray";
+        VariableValueType[VariableValueType["Enum"] = 6] = "Enum";
+        VariableValueType[VariableValueType["Function"] = 7] = "Function";
+        VariableValueType[VariableValueType["None"] = 8] = "None";
+    })(VariableValueType = LibSdbTypes.VariableValueType || (LibSdbTypes.VariableValueType = {}));
+    let VariableRefType;
+    (function (VariableRefType) {
+        VariableRefType[VariableRefType["Array"] = 0] = "Array";
+        VariableRefType[VariableRefType["Struct"] = 1] = "Struct";
+        VariableRefType[VariableRefType["Mapping"] = 2] = "Mapping";
+        VariableRefType[VariableRefType["None"] = 3] = "None";
+    })(VariableRefType = LibSdbTypes.VariableRefType || (LibSdbTypes.VariableRefType = {}));
     class Variable {
         constructor() {
         }
@@ -67,9 +93,95 @@ var LibSdbTypes;
             let clone = new Variable();
             clone.name = this.name;
             clone.type = this.type;
+            clone.originalType = this.originalType;
+            clone.refType = this.refType;
+            clone.arrayIsDynamic = this.arrayIsDynamic;
+            clone.arrayLength = this.arrayLength;
             clone.scope = this.scope.clone();
             clone.stackPosition = this.stackPosition;
             return clone;
+        }
+        typeToString() {
+            return "";
+        }
+        valueToString(stack, memory, storage) {
+            let v = "";
+            switch (this.location) {
+                case VariableLocation.Stack:
+                    v = this.stackValueToString(stack);
+                    break;
+                case VariableLocation.Memory:
+                    v = this.memoryValueToString(stack, memory);
+                    break;
+                case VariableLocation.Storage:
+                    v = this.storageValueToString();
+                    break;
+                default:
+                    break;
+            }
+            return v;
+        }
+        stackValueToString(stack) {
+            if (this.stackPosition !== null && stack.length > this.stackPosition) {
+                // stack
+                return utils_1.LibSdbUtils.interperetValue(this.type, stack[this.stackPosition]);
+            }
+            else {
+                return "";
+            }
+        }
+        memoryValueToString(stack, memory) {
+            if (this.stackPosition !== null && stack.length > this.stackPosition) {
+                // memory
+                const memoryLocation = parseInt(stack[this.stackPosition], 16);
+                if (memoryLocation === undefined) {
+                    return "(invalid memory location)";
+                }
+                let numBytesPerElement = 0;
+                switch (this.type) {
+                    case LibSdbTypes.VariableValueType.Boolean:
+                    case LibSdbTypes.VariableValueType.UnsignedInteger:
+                    case LibSdbTypes.VariableValueType.Integer:
+                    case LibSdbTypes.VariableValueType.Address:
+                    case LibSdbTypes.VariableValueType.FixedByteArray:
+                        numBytesPerElement = 32;
+                        break;
+                    case LibSdbTypes.VariableValueType.FixedPoint:
+                    case LibSdbTypes.VariableValueType.Enum:
+                    case LibSdbTypes.VariableValueType.Function:
+                        // TODO:
+                        break;
+                    case LibSdbTypes.VariableValueType.None:
+                    default:
+                        break;
+                }
+                if (this.refType === VariableRefType.Array) {
+                    const memorySlice = memory.slice(memoryLocation, memoryLocation + numBytesPerElement * this.arrayLength);
+                    let elements = [];
+                    for (let i = 0; i < this.arrayLength; i++) {
+                        const elementSlice = memorySlice.slice(i * numBytesPerElement, i * numBytesPerElement + numBytesPerElement);
+                        const element = Array.from(elementSlice, function (byte) {
+                            if (byte === null) {
+                                return "";
+                            }
+                            else {
+                                return ("0" + (byte).toString(16)).slice(-2); // tslint:disable-line no-bitwise
+                            }
+                        }).join("");
+                        const elementValue = utils_1.LibSdbUtils.interperetValue(this.type, element);
+                        elements.push(elementValue);
+                    }
+                    return JSON.stringify(elements);
+                }
+                return ""; // TODO:
+            }
+            else {
+                return "";
+            }
+        }
+        storageValueToString() {
+            // storage
+            return "";
         }
     }
     LibSdbTypes.Variable = Variable;
@@ -92,6 +204,7 @@ var LibSdbTypes;
     LibSdbTypes.ExpressionFunction = ExpressionFunction;
     class Evaluation {
         constructor() {
+            this.returnVariable = new Variable();
         }
         clone() {
             let clone = new Evaluation();

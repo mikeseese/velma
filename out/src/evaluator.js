@@ -52,7 +52,7 @@ class LibSdbEvaluator {
     generateFunction(expression, args) {
         const functionName = "sdb_" + uuidv4().replace(/-/g, "");
         const argsString = args.map((arg) => {
-            return arg.type + " " + arg.name;
+            return arg.originalType.replace("storage", "").replace("memory", "") + " " + arg.name;
         }).join(",");
         const argsRefString = args.map((arg) => {
             return arg.name;
@@ -183,12 +183,14 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                     };
                     compileInput.sources[newFile.name] = { content: newFile.sourceCode };
                     let result = JSON.parse(compiler_1.LibSdbCompile.compile(JSON.stringify(compileInput)));
+                    let returnTypeString = "";
                     if (result.errors !== undefined) {
                         for (let i = 0; i < result.errors.length; i++) {
                             const error = result.errors[i];
                             let match = matchReturnTypeFromError(error.message);
                             if (match) {
                                 // return type
+                                returnTypeString = match[1];
                                 const refString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (bool)`;
                                 const repString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (` + match[1] + `)`;
                                 newFile.sourceCode = newFile.sourceCode.replace(refString, repString);
@@ -258,6 +260,8 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         this._runtime._ongoingEvaluation = new types_1.LibSdbTypes.Evaluation();
                         this._runtime._ongoingEvaluation.functionName = functionInsert.name;
                         this._runtime._ongoingEvaluation.callback = callback;
+                        this._runtime._ongoingEvaluation.returnVariable.originalType = returnTypeString;
+                        utils_1.LibSdbUtils.applyVariableType(this._runtime._ongoingEvaluation.returnVariable, false, "default", "ParameterList");
                         // push the code
                         const content = {
                             "type": "putCodeRequest",
