@@ -145,6 +145,7 @@ export namespace LibSdbCompile {
                                         variable.scope.childIndex = childIndex;
                                         variable.scope.depth = depth;
                                         variable.stackPosition = stackPosition;
+                                        const varType: string = node.attributes.type || "";
                                         if (node.attributes.stateVariable === true) {
                                             variable.location = LibSdbTypes.VariableLocation.Storage;
                                         }
@@ -152,7 +153,6 @@ export namespace LibSdbCompile {
                                             if (node.attributes.storageLocation === "default") {
                                                 // look at the type to figure out where it goes
                                                 // if value type
-                                                const varType: string = node.attributes.type || "";
                                                 let isReferenceType: boolean = false;
                                                 isReferenceType = isReferenceType || varType.startsWith("struct"); // struct
                                                 isReferenceType = isReferenceType || varType.includes("[") && varType.includes("]"); // array
@@ -181,7 +181,6 @@ export namespace LibSdbCompile {
                                                 variable.location = LibSdbTypes.VariableLocation.Stack;
                                             }
                                         }
-                                        const varType: string = node.attributes.type;
                                         if (varType.match(/bool/g)) {
                                             variable.type = LibSdbTypes.VariableValueType.Boolean;
                                         }
@@ -200,6 +199,14 @@ export namespace LibSdbCompile {
                                         // TODO: FixedPoint when its implemented in solidity
                                         // TODO: Enum
                                         // TODO: Function
+                                        variable.refType = LibSdbTypes.VariableRefType.None;
+                                        const arrayExpression: RegExp = /\[([0-9]*)\]/g;
+                                        const arrayMatch = arrayExpression.exec(varType);
+                                        if(arrayMatch) {
+                                            variable.refType = LibSdbTypes.VariableRefType.Array;
+                                            variable.arrayIsDynamic = false; // TODO: support dynamic sized arrays
+                                            variable.arrayLength = parseInt(arrayMatch[1]) || 0;
+                                        }
 
                                         // add the variable to the parent's scope
                                         newScopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);

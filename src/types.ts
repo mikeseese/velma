@@ -194,8 +194,47 @@ export namespace LibSdbTypes {
 
         memoryValueToString(stack: string[], memory: (number | null)[]): string {
             if (this.stackPosition !== null && stack.length > this.stackPosition) {
-                // stack
-                //const memoryLocation = parseInt(stack[this.stackPosition], 16);
+                // memory
+                const memoryLocation = parseInt(stack[this.stackPosition], 16);
+                if (memoryLocation === undefined) {
+                    return "(invalid memory location)";
+                }
+                let numBytesPerElement: number = 0;
+                switch (this.type) {
+                    case LibSdbTypes.VariableValueType.Boolean:
+                    case LibSdbTypes.VariableValueType.UnsignedInteger:
+                    case LibSdbTypes.VariableValueType.Integer:
+                    case LibSdbTypes.VariableValueType.Address:
+                    case LibSdbTypes.VariableValueType.FixedByteArray:
+                        numBytesPerElement = 32;
+                        break;
+                    case LibSdbTypes.VariableValueType.FixedPoint:
+                    case LibSdbTypes.VariableValueType.Enum:
+                    case LibSdbTypes.VariableValueType.Function:
+                        // TODO:
+                        break;
+                    case LibSdbTypes.VariableValueType.None:
+                    default:
+                        break;
+                }
+                if (this.refType === VariableRefType.Array) {
+                    const memorySlice = memory.slice(memoryLocation, memoryLocation + numBytesPerElement * this.arrayLength);
+                    let elements: string[] = [];
+                    for (let i = 0; i < this.arrayLength; i++) {
+                        const elementSlice = memorySlice.slice(i*numBytesPerElement, i*numBytesPerElement + numBytesPerElement);
+                        const element = Array.from(elementSlice, function(byte) {
+                            if (byte === null) {
+                                return "";
+                            }
+                            else {
+                                return ("0" + (byte).toString(16)).slice(-2); // tslint:disable-line no-bitwise
+                            }
+                        }).join("");
+                        const elementValue = LibSdbUtils.interperetValue(this.type, element);
+                        elements.push(elementValue);
+                    }
+                    return JSON.stringify(elements);
+                }
                 return ""; // TODO:
             }
             else {
@@ -204,6 +243,7 @@ export namespace LibSdbTypes {
         }
 
         storageValueToString(): string {
+            // storage
             return "";
         }
     }
