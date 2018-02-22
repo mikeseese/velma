@@ -114,7 +114,10 @@ export class LibSdbInterface {
                 this.respondToDebugHook(data.id);
             }
             else if (triggerType === "linkContractAddress") {
-                LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.contractName, data.content.address);
+                const contract = LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.contractName, data.content.address);
+                if (contract !== null) {
+                    this._runtime._breakpoints.verifyBreakpoints(contract.sourcePath);
+                }
                 this.respondToDebugHook(data.id);
             }
             else if (triggerType === "step" || triggerType === "exception") {
@@ -127,15 +130,6 @@ export class LibSdbInterface {
                 debuggerMessage(data.content);
             }
             this._debuggerMessages.delete(data.id);
-
-            // TODO: none of this is going to work any more
-            // if (data.content.type === "putCodeResponse") {
-            //     // i guess we dont care right now that this is responding to the specific request yet; we will probably eventually
-            //     this.respondToDebugHook(data.id); // eek, let the debugger run!
-            // }
-            // else if (data.content.type === "getStorage") {
-            //     //
-            // }
         }
     }
 

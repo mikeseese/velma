@@ -75,15 +75,15 @@ export class LibSdbBreakpoints {
                                 const pos = parseInt(srcSplit[0]);
                                 if (startPosition <= pos && pos <= endPosition) {
                                     sourceLocation = {
-                                        start: srcSplit[0],
-                                        length: srcSplit[1],
-                                        file: srcSplit[2]
+                                        start: parseInt(srcSplit[0]),
+                                        length: parseInt(srcSplit[1]),
+                                        file: parseInt(srcSplit[2])
                                     };
-                                    return true;
+                                    return false;
                                 }
                             }
 
-                            return false;
+                            return true;
                         });
                         if (sourceLocation !== null) {
                             address = contract.address;

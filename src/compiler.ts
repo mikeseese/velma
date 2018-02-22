@@ -183,11 +183,15 @@ export namespace LibSdbCompile {
         return true;
     }
 
-    export function linkContractAddress(_contractsByName: LibSdbTypes.ContractMap, _contractsByAddress: LibSdbTypes.ContractMap, name: string, address: string) {
+    export function linkContractAddress(_contractsByName: LibSdbTypes.ContractMap, _contractsByAddress: LibSdbTypes.ContractMap, name: string, address: string): LibSdbTypes.Contract | null {
         if (_contractsByName.has(name)) {
             const contract = _contractsByName.get(name)!;
             contract.address = address.toLowerCase();
             _contractsByAddress.set(contract.address, contract);
+            return contract;
+        }
+        else {
+            return null;
         }
     }
 }
