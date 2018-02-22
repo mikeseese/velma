@@ -136,7 +136,7 @@ export class LibSdbRuntime extends EventEmitter {
                             // get variable at top of stack
                             // TODO: add support for multiple variable evaluations
 
-                            this._ongoingEvaluation.returnVariable.stackPosition = data.content.stack.length - 1;
+                            this._ongoingEvaluation.returnVariable.position = data.content.stack.length - 1;
 
                             const returnString = this._ongoingEvaluation.returnVariable.valueToString(data.content.stack, data.content.memory, {});
                             this._ongoingEvaluation.callback(returnString); // TODO: storage
@@ -176,13 +176,13 @@ export class LibSdbRuntime extends EventEmitter {
                             if (name === variableDeclarationNode.attributes.name) {
                                 let variable = variables.get(name)!;
                                 if (variable.location === LibSdbTypes.VariableLocation.Stack) {
-                                    variable.stackPosition = data.content.stack.length;
+                                    variable.position = data.content.stack.length;
                                 }
                                 else if (variable.location === LibSdbTypes.VariableLocation.Memory) {
-                                    variable.stackPosition = data.content.stack.length - 1; // must prepend it onto the stack for memory
+                                    variable.position = data.content.stack.length - 1; // must prepend it onto the stack for memory
                                 }
                                 if (variable.location === LibSdbTypes.VariableLocation.Storage) {
-                                    variable.stackPosition = data.content.stack.length;
+                                    variable.position = data.content.stack.length;
                                 }
                                 break;
                             }

@@ -141,7 +141,7 @@ export namespace LibSdbTypes {
         arrayLength: number; // 0 for non-arrays
         // TODO: struct info
         scope: AstScope;
-        stackPosition: number | null;
+        position: number | null;
         location: VariableLocation;
 
         constructor() {
@@ -164,7 +164,7 @@ export namespace LibSdbTypes {
 
             clone.scope = this.scope.clone();
 
-            clone.stackPosition = this.stackPosition;
+            clone.position = this.position;
 
             return clone;
         }
@@ -192,9 +192,9 @@ export namespace LibSdbTypes {
         }
 
         stackValueToString(stack: string[]): string {
-            if (this.stackPosition !== null && stack.length > this.stackPosition) {
+            if (this.position !== null && stack.length > this.position) {
                 // stack
-                return LibSdbUtils.interperetValue(this.type, stack[this.stackPosition]);
+                return LibSdbUtils.interperetValue(this.type, stack[this.position]);
             }
             else {
                 return "";
@@ -202,9 +202,9 @@ export namespace LibSdbTypes {
         }
 
         memoryValueToString(stack: string[], memory: (number | null)[]): string {
-            if (this.stackPosition !== null && stack.length > this.stackPosition) {
+            if (this.position !== null && stack.length > this.position) {
                 // memory
-                const memoryLocation = parseInt(stack[this.stackPosition], 16);
+                const memoryLocation = parseInt(stack[this.position], 16);
                 if (memoryLocation === undefined) {
                     return "(invalid memory location)";
                 }

@@ -130,11 +130,11 @@ export namespace LibSdbCompile {
                                         }
 
                                         // try to find the variable in our prior variable to get the stack position (which shouldn't have changed)
-                                        let stackPosition: number | null = null;
+                                        let position: number | null = null;
                                         contract.scopeVariableMap.forEach((variables, scopeId) => {
                                             const variable = variables.get(node.attributes.name);
                                             if (variable && variable.scope.depth === depth) {
-                                                stackPosition = variable.stackPosition;
+                                                position = variable.position;
                                             }
                                         });
 
@@ -146,7 +146,7 @@ export namespace LibSdbCompile {
                                         variable.scope.id = node.attributes.scope;
                                         variable.scope.childIndex = childIndex;
                                         variable.scope.depth = depth;
-                                        variable.stackPosition = stackPosition;
+                                        variable.position = position;
                                         LibSdbUtils.applyVariableType(variable, node.attributes.stateVariable, node.attributes.storageLocation, parent.name);
 
                                         // add the variable to the parent's scope
