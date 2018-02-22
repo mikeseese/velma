@@ -112,11 +112,11 @@ var LibSdbCompile;
                                             }
                                         }
                                         // try to find the variable in our prior variable to get the stack position (which shouldn't have changed)
-                                        let stackPosition = null;
+                                        let position = null;
                                         contract.scopeVariableMap.forEach((variables, scopeId) => {
                                             const variable = variables.get(node.attributes.name);
                                             if (variable && variable.scope.depth === depth) {
-                                                stackPosition = variable.stackPosition;
+                                                position = variable.position;
                                             }
                                         });
                                         let variable = new types_1.LibSdbTypes.Variable();
@@ -127,8 +127,12 @@ var LibSdbCompile;
                                         variable.scope.id = node.attributes.scope;
                                         variable.scope.childIndex = childIndex;
                                         variable.scope.depth = depth;
-                                        variable.stackPosition = stackPosition;
+                                        variable.position = position;
                                         utils_1.LibSdbUtils.applyVariableType(variable, node.attributes.stateVariable, node.attributes.storageLocation, parent.name);
+                                        if (variable.position === null && node.attributes.stateVariable) {
+                                            variable.position = contract.numStateVariables;
+                                            contract.numStateVariables++;
+                                        }
                                         // add the variable to the parent's scope
                                         newScopeVariableMap.get(variable.scope.id).set(variable.name, variable);
                                     }

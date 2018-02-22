@@ -1,4 +1,12 @@
 "use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : new P(function (resolve) { resolve(result.value); }).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const events_1 = require("events");
 const types_1 = require("./types");
@@ -97,7 +105,7 @@ class LibSdbRuntime extends events_1.EventEmitter {
                         if (this._ongoingEvaluation !== null && this._ongoingEvaluation.functionName === functionName) {
                             // get variable at top of stack
                             // TODO: add support for multiple variable evaluations
-                            this._ongoingEvaluation.returnVariable.stackPosition = data.content.stack.length - 1;
+                            this._ongoingEvaluation.returnVariable.position = data.content.stack.length - 1;
                             const returnString = this._ongoingEvaluation.returnVariable.valueToString(data.content.stack, data.content.memory, {});
                             this._ongoingEvaluation.callback(returnString); // TODO: storage
                             this._ongoingEvaluation = null;
@@ -131,13 +139,13 @@ class LibSdbRuntime extends events_1.EventEmitter {
                             if (name === variableDeclarationNode.attributes.name) {
                                 let variable = variables.get(name);
                                 if (variable.location === types_1.LibSdbTypes.VariableLocation.Stack) {
-                                    variable.stackPosition = data.content.stack.length;
+                                    variable.position = data.content.stack.length;
                                 }
                                 else if (variable.location === types_1.LibSdbTypes.VariableLocation.Memory) {
-                                    variable.stackPosition = data.content.stack.length - 1; // must prepend it onto the stack for memory
+                                    variable.position = data.content.stack.length - 1; // must prepend it onto the stack for memory
                                 }
                                 if (variable.location === types_1.LibSdbTypes.VariableLocation.Storage) {
-                                    variable.stackPosition = data.content.stack.length;
+                                    variable.position = data.content.stack.length;
                                 }
                                 break;
                             }
@@ -188,31 +196,64 @@ class LibSdbRuntime extends events_1.EventEmitter {
         };
     }
     variables() {
-        let variables = [];
-        if (this._stepData !== null) {
-            const stack = this._stepData.vmData.stack;
-            const memory = this._stepData.vmData.memory;
-            const storage = {}; // TODO:
-            const contract = this._contractsByAddress.get(this._stepData.contractAddress);
-            for (let i = 0; i < this._stepData.scope.length; i++) {
-                const scope = this._stepData.scope[i];
-                const scopeVars = contract.scopeVariableMap.get(scope.id);
-                const names = scopeVars.keys();
-                for (const name of names) {
-                    const variable = scopeVars.get(name);
-                    if (variable) {
-                        // TODO: more advanced array display
-                        variables.push({
-                            name: name,
-                            type: variable.typeToString(),
-                            value: variable.valueToString(stack, memory, storage),
-                            variablesReference: 0
-                        });
+        return __awaiter(this, void 0, void 0, function* () {
+            let variables = [];
+            if (this._stepData !== null) {
+                const stack = this._stepData.vmData.stack;
+                const memory = this._stepData.vmData.memory;
+                const storage = {}; // TODO:
+                const contract = this._contractsByAddress.get(this._stepData.contractAddress);
+                for (let i = 0; i < this._stepData.scope.length; i++) {
+                    const scope = this._stepData.scope[i];
+                    const scopeVars = contract.scopeVariableMap.get(scope.id);
+                    const names = scopeVars.keys();
+                    for (const name of names) {
+                        const variable = scopeVars.get(name);
+                        if (variable) {
+                            // TODO: more advanced array display
+                            let value = "";
+                            if (variable.location === types_1.LibSdbTypes.VariableLocation.Storage) {
+                                if (variable.position === null) {
+                                    value = "(storage location undefined)";
+                                }
+                                else {
+                                    let key = new Buffer(32);
+                                    if (variable.refType === types_1.LibSdbTypes.VariableRefType.None) {
+                                        key[31] = variable.position;
+                                        const content = yield this._interface.requestStorage(this._stepData.contractAddress, key);
+                                        value = utils_1.LibSdbUtils.interperetValue(variable.type, new Buffer(content.value.data).toString("hex"));
+                                    }
+                                    else {
+                                        if (variable.refType === types_1.LibSdbTypes.VariableRefType.Array && !variable.arrayIsDynamic) {
+                                            let values = [];
+                                            for (let j = 0; j < variable.arrayLength; j++) {
+                                                key[31] = variable.position + j;
+                                                const content = yield this._interface.requestStorage(this._stepData.contractAddress, key);
+                                                values.push(utils_1.LibSdbUtils.interperetValue(variable.type, new Buffer(content.value.data).toString("hex")));
+                                            }
+                                            value = JSON.stringify(values);
+                                        }
+                                        else {
+                                            value = "(storage for type unsupported)";
+                                        }
+                                    }
+                                }
+                            }
+                            else {
+                                value = variable.valueToString(stack, memory, storage);
+                            }
+                            variables.push({
+                                name: name,
+                                type: variable.typeToString(),
+                                value: value,
+                                variablesReference: 0
+                            });
+                        }
                     }
                 }
             }
-        }
-        return variables;
+            return variables;
+        });
     }
     start(stopOnEntry) {
         this._breakpoints.verifyAllBreakpoints();
@@ -225,8 +266,8 @@ class LibSdbRuntime extends events_1.EventEmitter {
             this.continue();
         }
     }
-    continue(reverse = false, content = null, event = undefined) {
-        this.run(reverse, event, content);
+    continue(reverse = false, event = undefined) {
+        this.run(reverse, event);
     }
     stepOver(reverse = false, event = 'stopOnStepOver') {
         this.run(reverse, event);
@@ -242,7 +283,9 @@ class LibSdbRuntime extends events_1.EventEmitter {
         this._priorUiStepData = CircularJSON.parse(CircularJSON.stringify(this._stepData));
         // We should be stopped currently, which is why we're calling this function
         // so we should continue on now
-        this.respondToDebugHook(content);
+        if (stepEvent !== "stopOnEvalBreakpoint") {
+            this.respondToDebugHook(content);
+        }
         if (reverse) {
             // TODO: implement reverse running
             /*for (let ln = this._currentLine-1; ln >= 0; ln--) {

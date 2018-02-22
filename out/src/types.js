@@ -98,7 +98,7 @@ var LibSdbTypes;
             clone.arrayIsDynamic = this.arrayIsDynamic;
             clone.arrayLength = this.arrayLength;
             clone.scope = this.scope.clone();
-            clone.stackPosition = this.stackPosition;
+            clone.position = this.position;
             return clone;
         }
         typeToString() {
@@ -122,18 +122,18 @@ var LibSdbTypes;
             return v;
         }
         stackValueToString(stack) {
-            if (this.stackPosition !== null && stack.length > this.stackPosition) {
+            if (this.position !== null && stack.length > this.position) {
                 // stack
-                return utils_1.LibSdbUtils.interperetValue(this.type, stack[this.stackPosition]);
+                return utils_1.LibSdbUtils.interperetValue(this.type, stack[this.position]);
             }
             else {
                 return "";
             }
         }
         memoryValueToString(stack, memory) {
-            if (this.stackPosition !== null && stack.length > this.stackPosition) {
+            if (this.position !== null && stack.length > this.position) {
                 // memory
-                const memoryLocation = parseInt(stack[this.stackPosition], 16);
+                const memoryLocation = parseInt(stack[this.position], 16);
                 if (memoryLocation === undefined) {
                     return "(invalid memory location)";
                 }
@@ -168,8 +168,10 @@ var LibSdbTypes;
                                 return ("0" + (byte).toString(16)).slice(-2); // tslint:disable-line no-bitwise
                             }
                         }).join("");
-                        const elementValue = utils_1.LibSdbUtils.interperetValue(this.type, element);
-                        elements.push(elementValue);
+                        if (element) {
+                            const elementValue = utils_1.LibSdbUtils.interperetValue(this.type, element);
+                            elements.push(elementValue);
+                        }
                     }
                     return JSON.stringify(elements);
                 }
@@ -219,6 +221,7 @@ var LibSdbTypes;
             this.pcMap = new Map();
             this.scopeVariableMap = new Map();
             this.functionNames = new Map();
+            this.numStateVariables = 0;
         }
         clone() {
             let clone = new Contract();
@@ -242,6 +245,7 @@ var LibSdbTypes;
             clone.runtimeBytecode = this.runtimeBytecode;
             clone.srcmapRuntime = this.srcmapRuntime;
             clone.ast = CircularJSON.parse(CircularJSON.stringify(this.ast));
+            clone.numStateVariables = this.numStateVariables;
             return clone;
         }
     }

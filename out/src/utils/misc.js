@@ -96,6 +96,9 @@ function findScope(index, ast) {
 exports.findScope = findScope;
 function interperetValue(variableType, valueHexString) {
     let v = "";
+    if (valueHexString === "") {
+        return v;
+    }
     let num;
     switch (variableType) {
         case types_1.LibSdbTypes.VariableValueType.Boolean:
