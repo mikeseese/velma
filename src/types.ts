@@ -239,8 +239,10 @@ export namespace LibSdbTypes {
                                 return ("0" + (byte).toString(16)).slice(-2); // tslint:disable-line no-bitwise
                             }
                         }).join("");
-                        const elementValue = LibSdbUtils.interperetValue(this.type, element);
-                        elements.push(elementValue);
+                        if (element) {
+                            const elementValue = LibSdbUtils.interperetValue(this.type, element);
+                            elements.push(elementValue);
+                        }
                     }
                     return JSON.stringify(elements);
                 }

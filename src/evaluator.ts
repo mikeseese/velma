@@ -314,12 +314,14 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
 
                         // push the code
                         const content = {
-                            "type": "putCodeRequest",
+                            "type": "injectNewCode",
                             "address": this._runtime._stepData.contractAddress,
                             "code": newContract.runtimeBytecode,
-                            "pc": newPc
+                            "pc": newPc,
+                            "stepId": this._runtime._stepData.debuggerMessageId
                         };
-                        this._runtime.continue(false, content, "stopOnEvalBreakpoint");
+                        this._runtime._interface.requestContent(content);
+                        this._runtime.continue(false, "stopOnEvalBreakpoint");
                     }
                     else {
                         callback("Error: Couldn't find the sourceLocation of the evaluation function; that's weird.")

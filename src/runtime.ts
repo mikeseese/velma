@@ -239,7 +239,7 @@ export class LibSdbRuntime extends EventEmitter {
         };
     }
 
-    public variables(): any[] {
+    public async variables(): Promise<any[]> {
         let variables: any[] = [];
 
         if (this._stepData !== null) {
@@ -255,12 +255,23 @@ export class LibSdbRuntime extends EventEmitter {
                     const variable = scopeVars.get(name);
                     if (variable) {
                         // TODO: more advanced array display
-                        variables.push({
-                            name: name,
-                            type: variable.typeToString(),
-                            value: variable.valueToString(stack, memory, storage),
-                            variablesReference: 0
-                        });
+                        if (name === "a") {
+                            const content = await this._interface.requestStorage(this._stepData.contractAddress, new Buffer(32));
+                            variables.push({
+                                name: name,
+                                type: variable.typeToString(),
+                                value: LibSdbUtils.interperetValue(variable.type, new Buffer(content.value.data).toString("hex")),
+                                variablesReference: 0
+                            });
+                        }
+                        else {
+                            variables.push({
+                                name: name,
+                                type: variable.typeToString(),
+                                value: variable.valueToString(stack, memory, storage),
+                                variablesReference: 0
+                            });
+                        }
                     }
                 }
             }
@@ -281,8 +292,8 @@ export class LibSdbRuntime extends EventEmitter {
         }
     }
 
-    public continue(reverse = false, content: any = null, event: string | undefined = undefined) {
-        this.run(reverse, event, content);
+    public continue(reverse = false, event: string | undefined = undefined) {
+        this.run(reverse, event);
     }
 
     public stepOver(reverse = false, event = 'stopOnStepOver') {
@@ -303,7 +314,9 @@ export class LibSdbRuntime extends EventEmitter {
 
         // We should be stopped currently, which is why we're calling this function
         // so we should continue on now
-        this.respondToDebugHook(content);
+        if (stepEvent !== "stopOnEvalBreakpoint") {
+            this.respondToDebugHook(content);
+        }
 
         if (reverse) {
             // TODO: implement reverse running
