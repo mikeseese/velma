@@ -73,6 +73,28 @@ export class LibSdbInterface {
         });
     }
 
+    public async requestSendBreakpoint(id: number, address: string, pc: number, enabled: boolean): Promise<any> {
+        return new Promise<any>((resolve, reject) => {
+            const msgId = uuidv4();
+            const request = {
+                "id": msgId,
+                "messageType": "request",
+                "content": {
+                    "type": "sendBreakpoint",
+                    "id": id,
+                    "address": address,
+                    "pc": pc,
+                    "enabled": enabled
+                }
+            };
+            const message = CircularJSON.stringify(request);
+
+            this._debuggerMessages.set(msgId, resolve);
+
+            this._latestWs.send(message);
+        });
+    }
+
     private messageHandler(ws: WebSocket, message: WebSocket.Data) {
         let data;
         if (message instanceof Buffer) {
