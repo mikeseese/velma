@@ -255,23 +255,45 @@ export class LibSdbRuntime extends EventEmitter {
                     const variable = scopeVars.get(name);
                     if (variable) {
                         // TODO: more advanced array display
-                        if (name === "a") {
-                            const content = await this._interface.requestStorage(this._stepData.contractAddress, new Buffer(32));
-                            variables.push({
-                                name: name,
-                                type: variable.typeToString(),
-                                value: LibSdbUtils.interperetValue(variable.type, new Buffer(content.value.data).toString("hex")),
-                                variablesReference: 0
-                            });
+                        let value = "";
+
+                        if (variable.location === LibSdbTypes.VariableLocation.Storage) {
+                            if (variable.position === null) {
+                                value = "(storage location undefined)";
+                            }
+                            else {
+                                let key: Buffer = new Buffer(32);
+                                if (variable.refType === LibSdbTypes.VariableRefType.None) {
+                                    key[31] = variable.position;
+                                    const content = await this._interface.requestStorage(this._stepData.contractAddress, key);
+                                    value = LibSdbUtils.interperetValue(variable.type, new Buffer(content.value.data).toString("hex"));
+                                }
+                                else {
+                                    if (variable.refType === LibSdbTypes.VariableRefType.Array && !variable.arrayIsDynamic) {
+                                        let values: string[] = [];
+                                        for (let j = 0; j < variable.arrayLength; j++) {
+                                            key[31] = variable.position + j;
+                                            const content = await this._interface.requestStorage(this._stepData.contractAddress, key);
+                                            values.push(LibSdbUtils.interperetValue(variable.type, new Buffer(content.value.data).toString("hex")));
+                                        }
+                                        value = JSON.stringify(values);
+                                    }
+                                    else {
+                                        value = "(storage for type unsupported)";
+                                    }
+                                }
+                            }
                         }
                         else {
-                            variables.push({
-                                name: name,
-                                type: variable.typeToString(),
-                                value: variable.valueToString(stack, memory, storage),
-                                variablesReference: 0
-                            });
+                            value = variable.valueToString(stack, memory, storage);
                         }
+
+                        variables.push({
+                            name: name,
+                            type: variable.typeToString(),
+                            value: value,
+                            variablesReference: 0
+                        });
                     }
                 }
             }

@@ -326,11 +326,13 @@ export namespace LibSdbTypes {
         runtimeBytecode: string;
         srcmapRuntime: string;
         ast: Ast;
+        numStateVariables: number;
 
         constructor() {
             this.pcMap = new Map<number, number>();
             this.scopeVariableMap = new Map<number, VariableMap>();
             this.functionNames = new Map<number, string>();
+            this.numStateVariables = 0;
         }
 
         clone(): Contract {
@@ -365,6 +367,8 @@ export namespace LibSdbTypes {
             clone.srcmapRuntime = this.srcmapRuntime;
 
             clone.ast = CircularJSON.parse(CircularJSON.stringify(this.ast));
+
+            clone.numStateVariables = this.numStateVariables;
 
             return clone;
         }

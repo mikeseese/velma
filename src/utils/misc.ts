@@ -184,6 +184,7 @@ export function findLowerBound(target, array) {
 
 export function applyVariableType(variable: LibSdbTypes.Variable, stateVariable: boolean, storageLocation: string, parentName: string) {
     const varType = variable.originalType;
+
     if (stateVariable === true) {
         variable.location = LibSdbTypes.VariableLocation.Storage;
     }
@@ -219,6 +220,7 @@ export function applyVariableType(variable: LibSdbTypes.Variable, stateVariable:
             variable.location = LibSdbTypes.VariableLocation.Stack;
         }
     }
+
     if (varType.match(/bool/g)) {
         variable.type = LibSdbTypes.VariableValueType.Boolean;
     }
@@ -234,6 +236,7 @@ export function applyVariableType(variable: LibSdbTypes.Variable, stateVariable:
     else if (varType.match(/(bytes)(([1-9]|[12][0-9]|3[0-2])\b)/g)) {
         variable.type = LibSdbTypes.VariableValueType.FixedByteArray;
     }
+
     // TODO: FixedPoint when its implemented in solidity
     // TODO: Enum
     // TODO: Function

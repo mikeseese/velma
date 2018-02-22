@@ -148,6 +148,10 @@ export namespace LibSdbCompile {
                                         variable.scope.depth = depth;
                                         variable.position = position;
                                         LibSdbUtils.applyVariableType(variable, node.attributes.stateVariable, node.attributes.storageLocation, parent.name);
+                                        if (variable.position === null && node.attributes.stateVariable) {
+                                            variable.position = contract.numStateVariables;
+                                            contract.numStateVariables++;
+                                        }
 
                                         // add the variable to the parent's scope
                                         newScopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
