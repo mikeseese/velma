@@ -17,11 +17,15 @@ class LibSdbInterface {
         this._runtime = runtime;
         this._debuggerMessages = new Map();
     }
-    respondToDebugHook(messageId, content = null) {
+    respondToDebugHook(stepEvent, messageId, content = null) {
         // don't respond if we don't actually need to
         if (!this._debuggerMessages.has(messageId)) {
             return;
         }
+        if (content === null) {
+            content = {};
+        }
+        content.fastStep = stepEvent === "stopOnBreakpoint";
         const response = {
             "status": "ok",
             "id": messageId,
@@ -65,6 +69,27 @@ class LibSdbInterface {
             });
         });
     }
+    requestSendBreakpoint(id, address, pc, enabled) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve, reject) => {
+                const msgId = uuidv4();
+                const request = {
+                    "id": msgId,
+                    "messageType": "request",
+                    "content": {
+                        "type": "sendBreakpoint",
+                        "id": id,
+                        "address": address,
+                        "pc": pc,
+                        "enabled": enabled
+                    }
+                };
+                const message = CircularJSON.stringify(request);
+                this._debuggerMessages.set(msgId, resolve);
+                this._latestWs.send(message);
+            });
+        });
+    }
     messageHandler(ws, message) {
         let data;
         if (message instanceof Buffer) {
@@ -79,11 +104,14 @@ class LibSdbInterface {
             this._debuggerMessages.set(data.id, ws);
             if (triggerType === "linkCompilerOutput") {
                 compiler_1.LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.sourceRootPath, data.content.compilationResult);
-                this.respondToDebugHook(data.id);
+                this.respondToDebugHook("stopOnBreakpoint", data.id);
             }
             else if (triggerType === "linkContractAddress") {
-                compiler_1.LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.contractName, data.content.address);
-                this.respondToDebugHook(data.id);
+                const contract = compiler_1.LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.contractName, data.content.address);
+                if (contract !== null) {
+                    this._runtime._breakpoints.verifyBreakpoints(contract.sourcePath);
+                }
+                this.respondToDebugHook("stopOnBreakpoint", data.id);
             }
             else if (triggerType === "step" || triggerType === "exception") {
                 this._runtime.vmStepped(data);
@@ -95,14 +123,6 @@ class LibSdbInterface {
                 debuggerMessage(data.content);
             }
             this._debuggerMessages.delete(data.id);
-            // TODO: none of this is going to work any more
-            // if (data.content.type === "putCodeResponse") {
-            //     // i guess we dont care right now that this is responding to the specific request yet; we will probably eventually
-            //     this.respondToDebugHook(data.id); // eek, let the debugger run!
-            // }
-            // else if (data.content.type === "getStorage") {
-            //     //
-            // }
         }
     }
     serve(host, port, callback) {

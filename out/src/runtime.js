@@ -31,13 +31,13 @@ class LibSdbRuntime extends events_1.EventEmitter {
         this._priorUiCallStack = [];
         this._ongoingEvaluation = null;
     }
-    respondToDebugHook(content = null) {
+    respondToDebugHook(stepEvent, content = null) {
         // don't respond if we don't actually need to
         if (this._stepData === null) {
             return;
         }
         this._priorStepData = CircularJSON.parse(CircularJSON.stringify(this._stepData));
-        this._interface.respondToDebugHook(this._stepData.debuggerMessageId, content);
+        this._interface.respondToDebugHook(stepEvent, this._stepData.debuggerMessageId, content);
         this._stepData = null;
     }
     vmStepped(data) {
@@ -63,7 +63,7 @@ class LibSdbRuntime extends events_1.EventEmitter {
             this._stepData.contractAddress = address;
             this._stepData.vmData = data.content;
             this._stepData.scope = [];
-            this.respondToDebugHook();
+            this.respondToDebugHook("");
         }
         else {
             const contract = this._contractsByAddress.get(address);
@@ -266,7 +266,7 @@ class LibSdbRuntime extends events_1.EventEmitter {
             this.continue();
         }
     }
-    continue(reverse = false, event = undefined) {
+    continue(reverse = false, event = "stopOnBreakpoint") {
         this.run(reverse, event);
     }
     stepOver(reverse = false, event = 'stopOnStepOver') {
@@ -284,7 +284,7 @@ class LibSdbRuntime extends events_1.EventEmitter {
         // We should be stopped currently, which is why we're calling this function
         // so we should continue on now
         if (stepEvent !== "stopOnEvalBreakpoint") {
-            this.respondToDebugHook(content);
+            this.respondToDebugHook(stepEvent, content);
         }
         if (reverse) {
             // TODO: implement reverse running
@@ -311,7 +311,7 @@ class LibSdbRuntime extends events_1.EventEmitter {
                 }
                 else {
                     // this is not the step we're looking for; move along
-                    this.respondToDebugHook();
+                    this.respondToDebugHook(stepEvent);
                 }
             });
         }

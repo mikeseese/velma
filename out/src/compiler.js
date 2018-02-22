@@ -164,6 +164,10 @@ var LibSdbCompile;
             const contract = _contractsByName.get(name);
             contract.address = address.toLowerCase();
             _contractsByAddress.set(contract.address, contract);
+            return contract;
+        }
+        else {
+            return null;
         }
     }
     LibSdbCompile.linkContractAddress = linkContractAddress;
