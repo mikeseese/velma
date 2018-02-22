@@ -49,7 +49,7 @@ export class LibSdbRuntime extends EventEmitter {
         this._ongoingEvaluation = null;
     }
 
-    private respondToDebugHook(content: any = null) {
+    private respondToDebugHook(stepEvent: string, content: any = null) {
         // don't respond if we don't actually need to
         if (this._stepData === null) {
             return;
@@ -57,7 +57,7 @@ export class LibSdbRuntime extends EventEmitter {
 
         this._priorStepData = CircularJSON.parse(CircularJSON.stringify(this._stepData));
 
-        this._interface.respondToDebugHook(this._stepData.debuggerMessageId, content);
+        this._interface.respondToDebugHook(stepEvent, this._stepData.debuggerMessageId, content);
 
         this._stepData = null;
     }
@@ -87,7 +87,7 @@ export class LibSdbRuntime extends EventEmitter {
             this._stepData.contractAddress = address;
             this._stepData.vmData = data.content;
             this._stepData.scope = [];
-            this.respondToDebugHook();
+            this.respondToDebugHook("");
         }
         else {
             const contract = this._contractsByAddress.get(address);
@@ -314,7 +314,7 @@ export class LibSdbRuntime extends EventEmitter {
         }
     }
 
-    public continue(reverse = false, event: string | undefined = undefined) {
+    public continue(reverse = false, event = "stopOnBreakpoint") {
         this.run(reverse, event);
     }
 
@@ -330,14 +330,14 @@ export class LibSdbRuntime extends EventEmitter {
         this.run(reverse, event);
     }
 
-    private run(reverse = false, stepEvent?: string, content: any = null): void {
+    private run(reverse = false, stepEvent: string, content: any = null): void {
         this._priorUiCallStack = CircularJSON.parse(CircularJSON.stringify(this._callStack));
         this._priorUiStepData = CircularJSON.parse(CircularJSON.stringify(this._stepData));
 
         // We should be stopped currently, which is why we're calling this function
         // so we should continue on now
         if (stepEvent !== "stopOnEvalBreakpoint") {
-            this.respondToDebugHook(content);
+            this.respondToDebugHook(stepEvent, content);
         }
 
         if (reverse) {
@@ -366,7 +366,7 @@ export class LibSdbRuntime extends EventEmitter {
                 }
                 else {
                     // this is not the step we're looking for; move along
-                    this.respondToDebugHook();
+                    this.respondToDebugHook(stepEvent);
                 }
             });
         }

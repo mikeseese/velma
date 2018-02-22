@@ -19,11 +19,16 @@ export class LibSdbInterface {
         this._debuggerMessages = new Map<string, WebSocket>();
     }
 
-    public respondToDebugHook(messageId: string, content: any = null) {
+    public respondToDebugHook(stepEvent: string, messageId: string, content: any = null) {
         // don't respond if we don't actually need to
         if (!this._debuggerMessages.has(messageId)) {
             return;
         }
+
+        if (content === null) {
+            content = {};
+        }
+        content.fastStep = stepEvent === "stopOnBreakpoint";
 
         const response = {
             "status": "ok",
@@ -111,14 +116,14 @@ export class LibSdbInterface {
 
             if (triggerType === "linkCompilerOutput") {
                 LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.sourceRootPath, data.content.compilationResult);
-                this.respondToDebugHook(data.id);
+                this.respondToDebugHook("stopOnBreakpoint", data.id);
             }
             else if (triggerType === "linkContractAddress") {
                 const contract = LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.contractName, data.content.address);
                 if (contract !== null) {
                     this._runtime._breakpoints.verifyBreakpoints(contract.sourcePath);
                 }
-                this.respondToDebugHook(data.id);
+                this.respondToDebugHook("stopOnBreakpoint", data.id);
             }
             else if (triggerType === "step" || triggerType === "exception") {
                 this._runtime.vmStepped(data);
