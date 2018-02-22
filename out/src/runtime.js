@@ -323,7 +323,6 @@ class LibSdbRuntime extends events_1.EventEmitter {
         const contract = this._contractsByAddress.get(this._stepData.contractAddress);
         const file = this._files.get(contract.sourcePath);
         const ln = this._stepData.location.start.line;
-        console.log(this._stepData.vmData.pc + " - " + ln + " - " + JSON.stringify(this._stepData.vmData.opcode));
         if (this._stepData.exception !== undefined) {
             this.sendEvent("stopOnException");
             return true;
