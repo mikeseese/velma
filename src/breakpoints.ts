@@ -12,11 +12,12 @@ export class LibSdbBreakpoints {
         this._breakpointId = 1;
     }
 
-    public async setBreakPoint(path: string, line: number, visible: boolean = true, originalSource: boolean = true): Promise<LibSdbTypes.Breakpoint> {
+    public async setBreakpoint(path: string, line: number, visible: boolean = true, originalSource: boolean = true): Promise<LibSdbTypes.Breakpoint> {
         if (!this._runtime._files.has(path)) {
             this._runtime._files.set(path, new LibSdbTypes.File("/", path));
         }
         const file = this._runtime._files.get(path)!;
+        const originalLine = line;
 
         if (originalSource) {
             // we need to modify the line number using line offsets with the original source bp's
@@ -38,7 +39,10 @@ export class LibSdbBreakpoints {
             await this.verifyBreakpoints(path);
         }
 
-        return bp;
+        let bpForUI = bp.clone();
+        bpForUI.line = originalLine;
+
+        return bpForUI;
     }
 
     public async verifyAllBreakpoints(): Promise<void> {
@@ -73,7 +77,7 @@ export class LibSdbBreakpoints {
                             if (node.src) {
                                 const srcSplit = node.src.split(":");
                                 const pos = parseInt(srcSplit[0]);
-                                if (startPosition <= pos && pos <= endPosition) {
+                                if (startPosition <= pos && pos <= endPosition && node.name !== "VariableDeclarationStatement" && node.name !== "VariableDeclaration") {
                                     sourceLocation = {
                                         start: parseInt(srcSplit[0]),
                                         length: parseInt(srcSplit[1]),

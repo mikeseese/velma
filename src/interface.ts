@@ -25,10 +25,12 @@ export class LibSdbInterface {
             return;
         }
 
-        if (content === null) {
-            content = {};
+        if (stepEvent !== "skipEvent") {
+            if (content === null) {
+                content = {};
+            }
+            content.fastStep = stepEvent === "stopOnBreakpoint";
         }
-        content.fastStep = stepEvent === "stopOnBreakpoint";
 
         const response = {
             "status": "ok",
@@ -100,7 +102,27 @@ export class LibSdbInterface {
         });
     }
 
-    private messageHandler(ws: WebSocket, message: WebSocket.Data) {
+    public async requestSendVariableDeclarations(address: string, declarations: number[]) {
+        return new Promise<any>((resolve, reject) => {
+            const msgId = uuidv4();
+            const request = {
+                "id": msgId,
+                "messageType": "request",
+                "content": {
+                    "type": "sendDeclarations",
+                    "address": address,
+                    "declarations": declarations
+                }
+            };
+            const message = CircularJSON.stringify(request);
+
+            this._debuggerMessages.set(msgId, resolve);
+
+            this._latestWs.send(message);
+        });
+    }
+
+    private async messageHandler(ws: WebSocket, message: WebSocket.Data): Promise<void> {
         let data;
         if (message instanceof Buffer) {
             data = CircularJSON.parse(message.toString("utf8"));
@@ -121,7 +143,8 @@ export class LibSdbInterface {
             else if (triggerType === "linkContractAddress") {
                 const contract = LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.contractName, data.content.address);
                 if (contract !== null) {
-                    this._runtime._breakpoints.verifyBreakpoints(contract.sourcePath);
+                    await this._runtime._breakpoints.verifyBreakpoints(contract.sourcePath);
+                    await this._runtime.sendVariableDeclarations(contract.address);
                 }
                 this.respondToDebugHook("stopOnBreakpoint", data.id);
             }

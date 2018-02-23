@@ -58,14 +58,14 @@ export class LibSdbRuntime extends EventEmitter {
         this._priorStepData = CircularJSON.parse(CircularJSON.stringify(this._stepData));
 
         this._interface.respondToDebugHook(stepEvent, this._stepData.debuggerMessageId, content);
-
-        this._stepData = null;
     }
 
     public vmStepped(data: any) {
         // step through code
+        this._stepData = null;
         const pc = data.content.pc;
         const address = (new Buffer(data.content.address.data)).toString("hex").toLowerCase();
+        let skipEvent = false;
 
         /*if (!(address in this._contracts)) {
           console.log("address " + address + " not monitored");
@@ -175,16 +175,22 @@ export class LibSdbRuntime extends EventEmitter {
                         for (const name of names) {
                             if (name === variableDeclarationNode.attributes.name) {
                                 let variable = variables.get(name)!;
-                                if (variable.location === LibSdbTypes.VariableLocation.Stack) {
-                                    variable.position = data.content.stack.length;
+                                if (variable.position === null) {
+                                    if (variable.location === LibSdbTypes.VariableLocation.Stack) {
+                                        variable.position = data.content.stack.length;
+                                    }
+                                    else if (variable.location === LibSdbTypes.VariableLocation.Memory) {
+                                        variable.position = data.content.stack.length - 1; // must prepend it onto the stack for memory
+                                    }
+                                    if (variable.location === LibSdbTypes.VariableLocation.Storage) {
+                                        variable.position = data.content.stack.length;
+                                    }
+                                    skipEvent = true;
+                                    break;
                                 }
-                                else if (variable.location === LibSdbTypes.VariableLocation.Memory) {
-                                    variable.position = data.content.stack.length - 1; // must prepend it onto the stack for memory
+                                else {
+                                    break;
                                 }
-                                if (variable.location === LibSdbTypes.VariableLocation.Storage) {
-                                    variable.position = data.content.stack.length;
-                                }
-                                break;
                             }
                         }
                     }
@@ -202,7 +208,12 @@ export class LibSdbRuntime extends EventEmitter {
                 this._stepData.exception = data.exceptionError;
             }
 
-            this.sendEvent("step");
+            if (skipEvent) {
+                this.respondToDebugHook("skipEvent");
+            }
+            else {
+                this.sendEvent("step");
+            }
         }
     }
 
@@ -273,7 +284,8 @@ export class LibSdbRuntime extends EventEmitter {
                                         let values: string[] = [];
                                         for (let j = 0; j < variable.arrayLength; j++) {
                                             key[31] = variable.position + j;
-                                            const content = await this._interface.requestStorage(this._stepData.contractAddress, key);
+                                            const address = this._stepData.contractAddress;
+                                            const content = await this._interface.requestStorage(address, key);
                                             values.push(LibSdbUtils.interperetValue(variable.type, new Buffer(content.value.data).toString("hex")));
                                         }
                                         value = JSON.stringify(values);
@@ -439,6 +451,42 @@ export class LibSdbRuntime extends EventEmitter {
 
         // nothing interesting found -> continue
         return false;
+    }
+
+    public async sendVariableDeclarations(address: string): Promise<void> {
+        const contract = this._contractsByAddress.get(address);
+        const declarations: number[] = [];
+        if (contract) {
+            let indexMap = new Map<number, number>();
+            for (const entry of contract.pcMap.entries()) {
+                indexMap.set(entry[1], entry[0]);
+            }
+            const astWalker = new LibSdbUtils.AstWalker();
+            astWalker.walk(contract.ast, (node) => {
+                if (node.name === "VariableDeclaration" && node.src) {
+                    const srcSplit = node.src.split(":");
+                    const sourceLocation = {
+                        start: parseInt(srcSplit[0]),
+                        length: parseInt(srcSplit[1]),
+                        file: parseInt(srcSplit[2])
+                    };
+                    const index = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, contract.srcmapRuntime);
+                    if (index !== null) {
+                        const pc = indexMap.get(index);
+                        if (pc !== undefined) {
+                            declarations.push(pc);
+                        }
+                    }
+
+                    return false;
+                }
+
+                return true;
+            });
+            if (declarations.length > 0) {
+                await this._interface.requestSendVariableDeclarations(contract.address, declarations);
+            }
+        }
     }
 
     public sendEvent(event: string, ...args: any[]) {

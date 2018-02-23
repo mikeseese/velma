@@ -299,7 +299,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         };
 
                         if (newLine !== null) {
-                            this._runtime._breakpoints.setBreakPoint(newContract.sourcePath, newLine, false, false);
+                            this._runtime._breakpoints.setBreakpoint(newContract.sourcePath, newLine, false, false);
                         }
                         else {
                             // TODO: handles this better
@@ -313,6 +313,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         LibSdbUtils.applyVariableType(this._runtime._ongoingEvaluation.returnVariable, false, "default", "ParameterList");
 
                         // push the code
+                        this._runtime.continue(false, "stopOnEvalBreakpoint");
                         const content = {
                             "type": "injectNewCode",
                             "address": this._runtime._stepData.contractAddress,
@@ -321,7 +322,6 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                             "stepId": this._runtime._stepData.debuggerMessageId
                         };
                         this._runtime._interface.requestContent(content);
-                        this._runtime.continue(false, "stopOnEvalBreakpoint");
                     }
                     else {
                         callback("Error: Couldn't find the sourceLocation of the evaluation function; that's weird.")
