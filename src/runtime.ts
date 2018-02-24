@@ -119,13 +119,28 @@ export class LibSdbRuntime extends EventEmitter {
                     // jump in
 
                     // push the prior function onto the stack. the current location for stack goes on when requested
-                    const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
-                    const functionName = node === null ? "(anonymous function)" : node.attributes.name;
+                    const nodePrior = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
+                    const functionNamePrior = nodePrior === null ? "(anonymous function)" : nodePrior.attributes.name;
                     let frame = new LibSdbTypes.StackFrame();
-                    frame.name = functionName;
+                    frame.name = functionNamePrior;
                     frame.file = contract.sourcePath;
                     frame.line = this._priorStepData.location.start === null ? null : this._priorStepData.location.start.line;
                     this._callStack.unshift(frame);
+
+                    const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", sourceLocation, { AST: contract.ast });
+                    if (node.children.length > 0 && node.children[0].name === "ParameterList") {
+                        const paramListNode = node.children[0];
+                        for (let i = 0; i < paramListNode.children.length; i++) {
+                            const functionArgument = paramListNode.children[i];
+                            const variables = contract.scopeVariableMap.get(functionArgument.attributes.scope);
+                            if (variables) {
+                                const variable = variables.get(functionArgument.attributes.name);
+                                if (variable) {
+                                    variable.position = data.content.stack.length - paramListNode.children.length + i;
+                                }
+                            }
+                        }
+                    }
                 }
                 else if (this._priorStepData.source.jump === "o") {
                     // jump out, we should be at a JUMPDEST currently
