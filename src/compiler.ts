@@ -117,45 +117,33 @@ export namespace LibSdbCompile {
                                 if (node.id) {
                                     // this is a new scope, add to map
                                     newScopeVariableMap.set(node.id, new Map<string, LibSdbTypes.Variable>());
+                                }
 
-                                    if (node.name === "VariableDeclaration") {
-                                        let childIndex: number | null = null;
-                                        if (parent) {
-                                            // look for the child in the parent to get the index
-                                            for (let i = 0; i < parent.children.length; i++) {
-                                                if (parent.children[i].id === node.id) {
-                                                    childIndex = i;
-                                                }
+                                if (node.name === "FunctionDefinition") {
+                                    const functionName = node.attributes.name;
+                                    astWalker.walkDetail(node, null, 0, (node, parent, depth) => {
+                                        if (node.id) {
+                                            // this is a new scope, add to map
+                                            newScopeVariableMap.set(node.id, new Map<string, LibSdbTypes.Variable>());
+    
+                                            if (node.name === "VariableDeclaration") {
+                                                const variable = createVariableFromAst(node, parent, depth, functionName, contract);
+                                                // add the variable to the parent's scope
+                                                newScopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
                                             }
                                         }
+    
+                                        return true;
+                                    });
 
-                                        // try to find the variable in our prior variable to get the stack position (which shouldn't have changed)
-                                        let position: number | null = null;
-                                        contract.scopeVariableMap.forEach((variables, scopeId) => {
-                                            const variable = variables.get(node.attributes.name);
-                                            if (variable && variable.scope.depth === depth) {
-                                                position = variable.position;
-                                            }
-                                        });
-
-                                        let variable = new LibSdbTypes.Variable();
-                                        const varType: string = node.attributes.type || "";
-                                        variable.name = node.attributes.name;
-                                        variable.originalType = varType;
-                                        variable.scope = new LibSdbTypes.AstScope();
-                                        variable.scope.id = node.attributes.scope;
-                                        variable.scope.childIndex = childIndex;
-                                        variable.scope.depth = depth;
-                                        variable.position = position;
-                                        LibSdbUtils.applyVariableType(variable, node.attributes.stateVariable, node.attributes.storageLocation, parent.name);
-                                        if (variable.position === null && node.attributes.stateVariable) {
-                                            variable.position = contract.numStateVariables;
-                                            contract.numStateVariables++;
-                                        }
-
-                                        // add the variable to the parent's scope
-                                        newScopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
-                                    }
+                                    // let's not go further into the function
+                                    return false;
+                                }
+                                else if (node.name === "VariableDeclaration") {
+                                    // this is outside of a function (i.e. state variables)
+                                    const variable = createVariableFromAst(node, parent, depth, null, contract);
+                                    // add the variable to the parent's scope
+                                    newScopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
                                 }
 
                                 return true;
@@ -181,6 +169,45 @@ export namespace LibSdbCompile {
         });
 
         return true;
+    }
+
+    function createVariableFromAst(node: any, parent: any, depth: number, functionName: string | null, contract: LibSdbTypes.Contract): LibSdbTypes.Variable {
+        let childIndex: number | null = null;
+        if (parent) {
+            // look for the child in the parent to get the index
+            for (let i = 0; i < parent.children.length; i++) {
+                if (parent.children[i].id === node.id) {
+                    childIndex = i;
+                }
+            }
+        }
+
+        // try to find the variable in our prior variable to get the stack position (which shouldn't have changed)
+        let position: number | null = null;
+        contract.scopeVariableMap.forEach((variables, scopeId) => {
+            const variable = variables.get(node.attributes.name);
+            if (variable && variable.scope.depth === depth && variable.functionName === functionName) {
+                position = variable.position;
+            }
+        });
+
+        let variable = new LibSdbTypes.Variable();
+        const varType: string = node.attributes.type || "";
+        variable.name = node.attributes.name;
+        variable.functionName = functionName;
+        variable.originalType = varType;
+        variable.scope = new LibSdbTypes.AstScope();
+        variable.scope.id = node.attributes.scope;
+        variable.scope.childIndex = childIndex;
+        variable.scope.depth = depth;
+        variable.position = position;
+        LibSdbUtils.applyVariableType(variable, node.attributes.stateVariable, node.attributes.storageLocation, parent.name);
+        if (variable.position === null && node.attributes.stateVariable) {
+            variable.position = contract.numStateVariables;
+            contract.numStateVariables++;
+        }
+
+        return variable;
     }
 
     export function linkContractAddress(_contractsByName: LibSdbTypes.ContractMap, _contractsByAddress: LibSdbTypes.ContractMap, name: string, address: string): LibSdbTypes.Contract | null {

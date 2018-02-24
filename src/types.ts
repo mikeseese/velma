@@ -134,6 +134,7 @@ export namespace LibSdbTypes {
 
     export class Variable {
         name: string;
+        functionName: string | null;
         type: VariableValueType;
         originalType: string;
         refType: VariableRefType;
@@ -151,6 +152,8 @@ export namespace LibSdbTypes {
             let clone = new Variable();
 
             clone.name = this.name;
+
+            clone.functionName = this.functionName;
 
             clone.type = this.type;
 
