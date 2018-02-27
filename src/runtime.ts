@@ -88,7 +88,7 @@ export class LibSdbRuntime extends EventEmitter {
             this._stepData.contractAddress = address;
             this._stepData.vmData = data.content;
             this._stepData.scope = [];
-            this.respondToDebugHook("");
+            this.respondToDebugHook("stopOnBreakpoint");
         }
         else {
             const contract = this._contractsByAddress.get(address);
@@ -109,109 +109,111 @@ export class LibSdbRuntime extends EventEmitter {
 
             // get line number from pc
             const index = contract.pcMap.get(pc);
-            if (index === undefined) {
-                //
-            }
             const sourceLocation = LibSdbUtils.SourceMappingDecoder.atIndex(index, contract.srcmapRuntime);
-            const currentLocation = LibSdbUtils.SourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, file.lineBreaks);
 
-            if (this._priorStepData && this._priorStepData.source) {
-                if (this._priorStepData.source.jump === "i") {
-                    // jump in
+            if (data.content.specialEvent === "jump") {
+                skipEvent = true;
+                if (this._priorStepData && this._priorStepData.source) {
+                    if (this._priorStepData.source.jump === "i") {
+                        // jump in
 
-                    // push the prior function onto the stack. the current location for stack goes on when requested
-                    const nodePrior = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
-                    const functionNamePrior = nodePrior === null ? "(anonymous function)" : nodePrior.attributes.name;
-                    let frame = new LibSdbTypes.StackFrame();
-                    frame.name = functionNamePrior;
-                    frame.file = contract.sourcePath;
-                    frame.line = this._priorStepData.location.start === null ? null : this._priorStepData.location.start.line;
-                    this._callStack.unshift(frame);
+                        // push the prior function onto the stack. the current location for stack goes on when requested
+                        const nodePrior = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
+                        const functionNamePrior = nodePrior === null ? "(anonymous function)" : nodePrior.attributes.name;
+                        let frame = new LibSdbTypes.StackFrame();
+                        frame.name = functionNamePrior;
+                        frame.file = contract.sourcePath;
+                        frame.line = this._priorStepData.location.start === null ? null : this._priorStepData.location.start.line;
+                        this._callStack.unshift(frame);
 
-                    const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", sourceLocation, { AST: contract.ast });
-                    if (node !== null && node.children.length > 0 && node.children[0].name === "ParameterList") {
-                        const paramListNode = node.children[0];
-                        for (let i = 0; i < paramListNode.children.length; i++) {
-                            const functionArgument = paramListNode.children[i];
-                            const variables = contract.scopeVariableMap.get(functionArgument.attributes.scope);
-                            if (variables) {
-                                const variable = variables.get(functionArgument.attributes.name);
-                                if (variable) {
-                                    variable.position = data.content.stack.length - paramListNode.children.length + i;
+                        const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", sourceLocation, { AST: contract.ast });
+                        if (node !== null && node.children.length > 0 && node.children[0].name === "ParameterList") {
+                            const paramListNode = node.children[0];
+                            for (let i = 0; i < paramListNode.children.length; i++) {
+                                const functionArgument = paramListNode.children[i];
+                                const variables = contract.scopeVariableMap.get(functionArgument.attributes.scope);
+                                if (variables) {
+                                    const variable = variables.get(functionArgument.attributes.name);
+                                    if (variable) {
+                                        variable.position = data.content.stack.length - paramListNode.children.length + i;
+                                    }
                                 }
                             }
                         }
                     }
+                    else if (this._priorStepData.source.jump === "o") {
+                        // jump out, we should be at a JUMPDEST currently
+                        const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
+                        if (node !== null) {
+                            const functionName = node.attributes.name;
+                            if (this._ongoingEvaluation !== null && this._ongoingEvaluation.functionName === functionName) {
+                                // get variable at top of stack
+                                // TODO: add support for multiple variable evaluations
+
+                                this._ongoingEvaluation.returnVariable.position = data.content.stack.length - 1;
+
+                                const returnString = this._ongoingEvaluation.returnVariable.valueToString(data.content.stack, data.content.memory, {});
+                                this._ongoingEvaluation.callback(returnString); // TODO: storage
+
+                                this._ongoingEvaluation = null;
+                            }
+                        }
+
+                        this._callStack.shift();
+                    }
+                    /*else if (pc in contract.functionNames) {
+                        // jump in to external function
+                        // this is the JUMPDEST of a function we just entered
+
+                        // TODO: figure this out
+                        // const functionName = contract.functionNames[pc];
+                        let frame = new LibSdbTypes.StackFrame();
+                        frame.name = "external place?";
+                        frame.file = contract.sourcePath;
+                        frame.line = 0 //currentLocation.start === null ? null : currentLocation.start.line;
+                        this._callStack.unshift(frame);
+                    }*/
                 }
-                else if (this._priorStepData.source.jump === "o") {
-                    // jump out, we should be at a JUMPDEST currently
-                    const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
-                    if (node !== null) {
-                        const functionName = node.attributes.name;
-                        if (this._ongoingEvaluation !== null && this._ongoingEvaluation.functionName === functionName) {
-                            // get variable at top of stack
-                            // TODO: add support for multiple variable evaluations
-
-                            this._ongoingEvaluation.returnVariable.position = data.content.stack.length - 1;
-
-                            const returnString = this._ongoingEvaluation.returnVariable.valueToString(data.content.stack, data.content.memory, {});
-                            this._ongoingEvaluation.callback(returnString); // TODO: storage
-
-                            this._ongoingEvaluation = null;
+            }
+            else if (data.content.specialEvent === "declaration") {
+                // is there a variable declaration here?
+                if (sourceLocation) {
+                    const variableDeclarationNode = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("VariableDeclaration", sourceLocation, { AST: contract.ast });
+                    if (variableDeclarationNode) {
+                        const scope = variableDeclarationNode.attributes.scope;
+                        const variables = contract.scopeVariableMap.get(scope);
+                        if (variables) {
+                            const names = variables.keys();
+                            for (const name of names) {
+                                if (name === variableDeclarationNode.attributes.name) {
+                                    let variable = variables.get(name)!;
+                                    if (variable.position === null) {
+                                        if (variable.location === LibSdbTypes.VariableLocation.Stack) {
+                                            variable.position = data.content.stack.length;
+                                        }
+                                        else if (variable.location === LibSdbTypes.VariableLocation.Memory) {
+                                            variable.position = data.content.stack.length;
+                                        }
+                                        if (variable.location === LibSdbTypes.VariableLocation.Storage) {
+                                            variable.position = data.content.stack.length;
+                                        }
+                                        skipEvent = true;
+                                        break;
+                                    }
+                                    else {
+                                        break;
+                                    }
+                                }
+                            }
                         }
                     }
-
-                    this._callStack.shift();
-                }
-                else if (pc in contract.functionNames) {
-                    // jump in to external function
-                    // this is the JUMPDEST of a function we just entered
-
-                    // TODO: figure this out
-                    // const functionName = contract.functionNames[pc];
-                    let frame = new LibSdbTypes.StackFrame();
-                    frame.name = "external place?";
-                    frame.file = contract.sourcePath;
-                    frame.line = 0 //currentLocation.start === null ? null : currentLocation.start.line;
-                    this._callStack.unshift(frame);
                 }
             }
 
             // find current scope
             const currentScope = LibSdbUtils.findScope(sourceLocation.start, contract.ast);
 
-            // is there a variable declaration here?
-            if (sourceLocation) {
-                const variableDeclarationNode = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("VariableDeclaration", sourceLocation, { AST: contract.ast });
-                if (variableDeclarationNode) {
-                    const scope = variableDeclarationNode.attributes.scope;
-                    const variables = contract.scopeVariableMap.get(scope);
-                    if (variables) {
-                        const names = variables.keys();
-                        for (const name of names) {
-                            if (name === variableDeclarationNode.attributes.name) {
-                                let variable = variables.get(name)!;
-                                if (variable.position === null) {
-                                    if (variable.location === LibSdbTypes.VariableLocation.Stack) {
-                                        variable.position = data.content.stack.length;
-                                    }
-                                    else if (variable.location === LibSdbTypes.VariableLocation.Memory) {
-                                        variable.position = data.content.stack.length;
-                                    }
-                                    if (variable.location === LibSdbTypes.VariableLocation.Storage) {
-                                        variable.position = data.content.stack.length;
-                                    }
-                                    skipEvent = true;
-                                    break;
-                                }
-                                else {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            const currentLocation = LibSdbUtils.SourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, file.lineBreaks);
 
             this._stepData = new LibSdbTypes.StepData();
             this._stepData.debuggerMessageId = data.id;
