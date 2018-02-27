@@ -260,6 +260,17 @@ export class LibSdbInterface {
                     break;
             }
         }
+        else {
+            switch (data.type) {
+                case "ping":
+                    const debuggerMessage = this._debuggerMessages.get(data.id)!;
+                    if (debuggerMessage instanceof Function) {
+                        debuggerMessage(true);
+                    }
+                    this._debuggerMessages.delete(data.id);
+                    break;
+            }
+        }
     }
 
     public async receiveFromEvm(data: any): Promise<void> {
@@ -297,18 +308,42 @@ export class LibSdbInterface {
     }
 
     public sendEvent(event: string, ...args: any[]) {
-        const eventPayload = {
-            "id": uuidv4(),
-            "isRequest": true,
-            "type": "event",
-            "content": {
-                "event": event,
-                "args": args
-            }
-        };
+        if (this._latestWs instanceof WebSocket) {
+            const eventPayload = {
+                "id": uuidv4(),
+                "isRequest": true,
+                "type": "event",
+                "content": {
+                    "event": event,
+                    "args": args
+                }
+            };
 
-        const message = JSON.stringify(eventPayload);
-        this._latestWs.send(message);
+            const message = JSON.stringify(eventPayload);
+            this._latestWs.send(message);
+        }
+    }
+
+    public ping(callback: Function) {
+        if (this._latestWs instanceof WebSocket) {
+            const payload = {
+                "id": uuidv4(),
+                "isRequest": true,
+                "type": "ping",
+                "content": {}
+            };
+
+            this._debuggerMessages.set(payload.id, callback);
+            setTimeout(() => {
+                this._debuggerMessages.delete(payload.id);
+                callback(false);
+            }, 1000);
+            const message = JSON.stringify(payload);
+            this._latestWs.send(message);
+        }
+        else {
+            callback(false);
+        }
     }
 
     public serve(host: string, port: number, callback) {
