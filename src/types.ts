@@ -1,5 +1,6 @@
 import { join as joinPath, dirname, basename } from "path";
 import { LibSdbUtils } from "./utils/utils";
+import { BN } from "bn.js";
 
 const CircularJSON = require("circular-json");
 
@@ -176,7 +177,7 @@ export namespace LibSdbTypes {
             return "";
         }
 
-        valueToString(stack: string[], memory: (number | null)[], storage: any): string {
+        valueToString(stack: BN[], memory: (number | null)[], storage: any): string {
             let v: string = "";
             switch (this.location) {
                 case VariableLocation.Stack:
@@ -194,7 +195,7 @@ export namespace LibSdbTypes {
             return v;
         }
 
-        stackValueToString(stack: string[]): string {
+        stackValueToString(stack: BN[]): string {
             if (this.position !== null && stack.length > this.position) {
                 // stack
                 return LibSdbUtils.interperetValue(this.type, stack[this.position]);
@@ -204,10 +205,10 @@ export namespace LibSdbTypes {
             }
         }
 
-        memoryValueToString(stack: string[], memory: (number | null)[]): string {
+        memoryValueToString(stack: BN[], memory: (number | null)[]): string {
             if (this.position !== null && stack.length > this.position) {
                 // memory
-                const memoryLocation = parseInt(stack[this.position], 16);
+                const memoryLocation = stack[this.position].toNumber();
                 if (memoryLocation === undefined) {
                     return "(invalid memory location)";
                 }
@@ -243,7 +244,7 @@ export namespace LibSdbTypes {
                             }
                         }).join("");
                         if (element) {
-                            const elementValue = LibSdbUtils.interperetValue(this.type, element);
+                            const elementValue = LibSdbUtils.interperetValue(this.type, new BN(element));
                             elements.push(elementValue);
                         }
                     }

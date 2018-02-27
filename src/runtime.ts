@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import { BN } from "bn.js";
 
 import { LibSdbTypes } from "./types";
 import { LibSdbUtils } from "./utils/utils";
@@ -64,7 +65,7 @@ export class LibSdbRuntime extends EventEmitter {
         // step through code
         this._stepData = null;
         const pc = data.content.pc;
-        const address = (new Buffer(data.content.address.data)).toString("hex").toLowerCase();
+        const address = data.content.address.toString("hex").toLowerCase();
         let skipEvent = false;
 
         /*if (!(address in this._contracts)) {
@@ -128,7 +129,7 @@ export class LibSdbRuntime extends EventEmitter {
                     this._callStack.unshift(frame);
 
                     const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", sourceLocation, { AST: contract.ast });
-                    if (node.children.length > 0 && node.children[0].name === "ParameterList") {
+                    if (node !== null && node.children.length > 0 && node.children[0].name === "ParameterList") {
                         const paramListNode = node.children[0];
                         for (let i = 0; i < paramListNode.children.length; i++) {
                             const functionArgument = paramListNode.children[i];
@@ -195,7 +196,7 @@ export class LibSdbRuntime extends EventEmitter {
                                         variable.position = data.content.stack.length;
                                     }
                                     else if (variable.location === LibSdbTypes.VariableLocation.Memory) {
-                                        variable.position = data.content.stack.length - 1; // must prepend it onto the stack for memory
+                                        variable.position = data.content.stack.length;
                                     }
                                     if (variable.location === LibSdbTypes.VariableLocation.Storage) {
                                         variable.position = data.content.stack.length;
@@ -292,7 +293,7 @@ export class LibSdbRuntime extends EventEmitter {
                                 if (variable.refType === LibSdbTypes.VariableRefType.None) {
                                     key[31] = variable.position;
                                     const content = await this._interface.requestStorage(this._stepData.contractAddress, key);
-                                    value = LibSdbUtils.interperetValue(variable.type, new Buffer(content.value.data).toString("hex"));
+                                    value = LibSdbUtils.interperetValue(variable.type, new BN(content.value));
                                 }
                                 else {
                                     if (variable.refType === LibSdbTypes.VariableRefType.Array && !variable.arrayIsDynamic) {
@@ -301,7 +302,7 @@ export class LibSdbRuntime extends EventEmitter {
                                             key[31] = variable.position + j;
                                             const address = this._stepData.contractAddress;
                                             const content = await this._interface.requestStorage(address, key);
-                                            values.push(LibSdbUtils.interperetValue(variable.type, new Buffer(content.value.data).toString("hex")));
+                                            values.push(LibSdbUtils.interperetValue(variable.type, new BN(content.value)));
                                         }
                                         value = JSON.stringify(values);
                                     }
@@ -378,7 +379,7 @@ export class LibSdbRuntime extends EventEmitter {
             }
             // no more lines: stop at first line
             this._currentLine = 0;
-            this.sendEvent('stopOnEntry');*/
+            this._interface.sendEvent('stopOnEntry');*/
         } else {
             this.on("step", function handler(this: LibSdbRuntime) {
                 if (this.fireEventsForStep(stepEvent)) {
@@ -388,7 +389,7 @@ export class LibSdbRuntime extends EventEmitter {
                     // TODO: handle end of evm?
                     /*if (this.) {
                       // we've finished the evm
-                      this.sendEvent("end");
+                      this._interface.sendEvent("end");
                     }*/
                 }
                 else {
@@ -409,7 +410,7 @@ export class LibSdbRuntime extends EventEmitter {
         const ln = this._stepData.location.start.line;
 
         if (this._stepData.exception !== undefined) {
-            this.sendEvent("stopOnException");
+            this._interface.sendEvent("stopOnException");
             return true;
         }
 
@@ -419,20 +420,20 @@ export class LibSdbRuntime extends EventEmitter {
             switch (stepEvent) {
                 case "stopOnStepOver":
                     if (callDepthChange === 0 && differentLine) {
-                        this.sendEvent("stopOnStepOver");
+                        this._interface.sendEvent("stopOnStepOver");
                         return true;
                     }
                     break;
                 case "stopOnStepIn":
                     const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, { AST: contract.ast });
                     if (callDepthChange > 0 && differentLine && node !== null) {
-                        this.sendEvent("stopOnStepIn");
+                        this._interface.sendEvent("stopOnStepIn");
                         return true;
                     }
                     break;
                 case "stopOnStepOut":
                     if (callDepthChange < 0 && differentLine) {
-                        this.sendEvent("stopOnStepOut");
+                        this._interface.sendEvent("stopOnStepOut");
                         return true;
                     }
                     break;
@@ -451,13 +452,13 @@ export class LibSdbRuntime extends EventEmitter {
 
         if (bps.length > 0) {
             // send 'stopped' event
-            this.sendEvent('stopOnBreakpoint');
+            this._interface.sendEvent('stopOnBreakpoint');
 
             // the following shows the use of 'breakpoint' events to update properties of a breakpoint in the UI
             // if breakpoint is not yet verified, verify it now and send a 'breakpoint' update event
             if (!bps[0].verified) {
                 bps[0].verified = true;
-                this.sendEvent('breakpointValidated', bps[0]);
+                this._interface.sendEvent('breakpointValidated', bps[0]);
             }
 
             // halt execution since we just hit a breakpoint

@@ -1,7 +1,6 @@
 import { LibSdbTypes } from "../types";
 import { AstWalker } from "./astWalker";
-
-const BigNumber = require("bignumber.js");
+import { BN } from "bn.js";
 
 // bytecode is a hex string of the bytecode without the preceding '0x'
 // methodId is the SHA3 hash of the ABI for this function
@@ -98,44 +97,27 @@ export function findScope(index: number, ast: LibSdbTypes.Ast): LibSdbTypes.AstS
     return scope;
 }
 
-export function interperetValue(variableType: LibSdbTypes.VariableValueType, valueHexString: string) {
+export function interperetValue(variableType: LibSdbTypes.VariableValueType, value: BN) {
     let v: string = "";
-    if (valueHexString === "") {
-        return v;
-    }
-    let num;
+    //let num;
     switch (variableType) {
         case LibSdbTypes.VariableValueType.Boolean:
-            v = valueHexString === "1" ? "true" : "false";
+            v = value.eqn(1) ? "true" : "false";
             break;
         case LibSdbTypes.VariableValueType.UnsignedInteger:
-            num = new BigNumber("0x" + valueHexString);
-            v = num.toString();
+            v = value.toString();
             break;
         case LibSdbTypes.VariableValueType.Integer:
-            let isPositive: boolean = true;
-            if (valueHexString.length === 64) {
-                // could be 2s complement
-                if (parseInt(valueHexString[0], 16) >= 8) {
-                    // 2s complement
-                    isPositive = false;
-                    valueHexString = valueHexString.replace(/f/g, "1111").replace(/1/g, "2").replace(/0/g, "3").replace(/2/g, "0").replace(/3/, "1");
-                }
-            }
-            num = new BigNumber((isPositive ? "" : "-") + "0x" + valueHexString);
-            if (!isPositive) {
-                num = num.minus(1);
-            }
-            v = num.toString();
+            v = value.fromTwos(256).toString();
             break;
         case LibSdbTypes.VariableValueType.FixedPoint:
             // not supported yet in Solidity (2/21/2018) per solidity.readthedocs.io
             break;
         case LibSdbTypes.VariableValueType.Address:
-            v = '"' + valueHexString + '"';
+            v = value.toString(16);
             break;
         case LibSdbTypes.VariableValueType.FixedByteArray:
-            const byteArrayStr = valueHexString.match(/.{2}/g);
+            const byteArrayStr = value.toString(16).match(/.{2}/g);
             let byteArray: number[];
             if (byteArrayStr !== null) {
                 byteArray = byteArrayStr.map((val, idx) => {

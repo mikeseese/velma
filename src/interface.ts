@@ -3,7 +3,6 @@ import * as WebSocket from "ws";
 import { LibSdbCompile } from "./compiler";
 import { LibSdbRuntime } from "./runtime";
 
-const CircularJSON = require("circular-json");
 const uuidv4 = require("uuid").v4;
 
 export class LibSdbInterface {
@@ -12,11 +11,13 @@ export class LibSdbInterface {
 
     private _runtime: LibSdbRuntime;
 
-    private _debuggerMessages: Map<string, WebSocket | Function | undefined>;
+    private _debuggerMessages: Map<string, Function | undefined>;
+
+    public evm: any | undefined;
 
     constructor(runtime: LibSdbRuntime) {
         this._runtime = runtime;
-        this._debuggerMessages = new Map<string, WebSocket>();
+        this._debuggerMessages = new Map<string, Function | undefined>();
     }
 
     public respondToDebugHook(stepEvent: string, messageId: string, content: any = null) {
@@ -38,10 +39,9 @@ export class LibSdbInterface {
             "messageType": "response",
             "content": content
         };
-        const message = CircularJSON.stringify(response);
         const debuggerMessage = this._debuggerMessages.get(messageId)!;
-        if (debuggerMessage instanceof WebSocket) {
-            debuggerMessage.send(message);
+        if (debuggerMessage instanceof Function) {
+            debuggerMessage(response);
         }
         this._debuggerMessages.delete(messageId);
     }
@@ -53,11 +53,12 @@ export class LibSdbInterface {
             "messageType": "request",
             "content": content
         };
-        const message = CircularJSON.stringify(request);
 
         this._debuggerMessages.set(msgId, callback);
 
-        this._latestWs.send(message);
+        if (this.evm !== undefined) {
+            this.evm.handleMessage(request);
+        }
     }
 
     public async requestStorage(address: any, position: any): Promise<any> {
@@ -72,11 +73,12 @@ export class LibSdbInterface {
                     "position": position
                 }
             };
-            const message = CircularJSON.stringify(request);
 
             this._debuggerMessages.set(msgId, resolve);
 
-            this._latestWs.send(message);
+            if (this.evm !== undefined) {
+                this.evm.handleMessage(request);
+            }
         });
     }
 
@@ -94,11 +96,12 @@ export class LibSdbInterface {
                     "enabled": enabled
                 }
             };
-            const message = CircularJSON.stringify(request);
 
             this._debuggerMessages.set(msgId, resolve);
 
-            this._latestWs.send(message);
+            if (this.evm !== undefined) {
+                this.evm.handleMessage(request);
+            }
         });
     }
 
@@ -114,27 +117,159 @@ export class LibSdbInterface {
                     "declarations": declarations
                 }
             };
-            const message = CircularJSON.stringify(request);
 
             this._debuggerMessages.set(msgId, resolve);
 
-            this._latestWs.send(message);
+            if (this.evm !== undefined) {
+                this.evm.handleMessage(request);
+            }
         });
     }
 
     private async messageHandler(ws: WebSocket, message: WebSocket.Data): Promise<void> {
-        let data;
-        if (message instanceof Buffer) {
-            data = CircularJSON.parse(message.toString("utf8"));
+        const data = JSON.parse(message.toString());
+
+        if (data.isRequest) {
+            switch (data.type) {
+                // TODO: start?
+                case "clearBreakpoints":
+                    await this._runtime._breakpoints.clearBreakpoints(data.content.path);
+                    {
+                        const payload = {
+                            "id": data.id,
+                            "isRequest": false,
+                            "type": data.type,
+                            "content": {}
+                        };
+                        const message = JSON.stringify(payload);
+                        ws.send(message);
+                    }
+                    break;
+                case "setBreakpoint":
+                    const breakpoint = await this._runtime._breakpoints.setBreakpoint(data.content.path, data.content.line);
+                    {
+                        const payload = {
+                            "id": data.id,
+                            "isRequest": false,
+                            "type": data.type,
+                            "content": {
+                                "data": breakpoint
+                            }
+                        };
+                        const message = JSON.stringify(payload);
+                        ws.send(message);
+                    }
+                    break;
+                case "stack":
+                    const stack = this._runtime.stack(data.content.startFrame, data.content.endFrame);
+                    {
+                        const payload = {
+                            "id": data.id,
+                            "isRequest": false,
+                            "type": data.type,
+                            "content": {
+                                "data": stack
+                            }
+                        };
+                        const message = JSON.stringify(payload);
+                        ws.send(message);
+                    }
+                    break;
+                case "variables":
+                    const variables = await this._runtime.variables();
+                    {
+                        const payload = {
+                            "id": data.id,
+                            "isRequest": false,
+                            "type": data.type,
+                            "content": {
+                                "data": variables
+                            }
+                        };
+                        const message = JSON.stringify(payload);
+                        ws.send(message);
+                    }
+                    break;
+                case "uiAction":
+                    let error = "";
+                    switch (data.content.action) {
+                        case "continue":
+                            this._runtime.continue();
+                            break;
+                        case "continueReverse":
+                            this._runtime.continue(true);
+                            break;
+                        case "stepOver":
+                            this._runtime.stepOver();
+                            break;
+                        case "stepBack":
+                            this._runtime.stepOver(true);
+                            break;
+                        case "stepIn":
+                            this._runtime.stepIn();
+                            break;
+                        case "stepOut":
+                            this._runtime.stepOut();
+                            break;
+                        default:
+                            error = "Unsupported Debugger Action (" + data.content.action + ")";
+                            break;
+                    }
+                    {
+                        let payload: any = {
+                            "id": data.id,
+                            "isRequest": false,
+                            "type": data.type,
+                            "content": {}
+                        };
+                        if (error) {
+                            payload.error = error;
+                        }
+                        const message = JSON.stringify(payload);
+                        ws.send(message);
+                    }
+                    break;
+                case "evaluate":
+                    this._runtime._evaluator.evaluate(data.content.expression, data.content.context, data.content.frameId, (reply) => {
+                        const payload = {
+                            "id": data.id,
+                            "isRequest": false,
+                            "type": data.type,
+                            "content": {
+                                "data": reply
+                            }
+                        };
+                        const message = JSON.stringify(payload);
+                        ws.send(message);
+                    });
+                    break;
+                default:
+                    // respond unsupported call?
+                    {
+                        const payload = {
+                            "id": data.id,
+                            "isRequest": false,
+                            "type": data.type,
+                            "content": {
+                                "error": "Unsupported Request Type (" + data.type + ")"
+                            }
+                        };
+                        const message = JSON.stringify(payload);
+                        ws.send(message);
+                    }
+                    break;
+            }
         }
-        else {
-            data = CircularJSON.parse(message);
-        }
+    }
+
+    public async receiveFromEvm(data: any): Promise<void> {
         const triggerType = data.triggerType;
         const messageType = data.messageType;
 
         if (messageType === "request") {
-            this._debuggerMessages.set(data.id, ws);
+            this._debuggerMessages.set(data.id, (message) => {
+                this.evm.handleMessage(message);
+            });
 
             if (triggerType === "linkCompilerOutput") {
                 LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.sourceRootPath, data.content.compilationResult);
@@ -161,15 +296,31 @@ export class LibSdbInterface {
         }
     }
 
+    public sendEvent(event: string, ...args: any[]) {
+        const eventPayload = {
+            "id": uuidv4(),
+            "isRequest": true,
+            "type": "event",
+            "content": {
+                "event": event,
+                "args": args
+            }
+        };
+
+        const message = JSON.stringify(eventPayload);
+        this._latestWs.send(message);
+    }
+
     public serve(host: string, port: number, callback) {
         const self = this;
 
         this._wss = new WebSocket.Server({
             host: host,
             port: port
-        }, callback);
+        });
 
         this._wss.on("connection", function connection(ws: WebSocket) {
+            callback();
             self._latestWs = ws;
             ws.on("message", (message) => {
                 self.messageHandler(ws, message);
