@@ -93,7 +93,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
         return expressionFunction;
     }
 
-    public evaluate(expression: string, context: string | undefined, frameId: number | undefined, callback) {
+    public async evaluate(expression: string, context: string | undefined, frameId: number | undefined, callback): Promise<void> {
         if (this._runtime._stepData === null) {
             return;
         }
@@ -327,6 +327,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         LibSdbUtils.applyVariableType(this._runtime._ongoingEvaluation.returnVariable, false, "default", "ParameterList");
 
                         // push the code
+                        await this._runtime.sendVariableDeclarations(newContract.address);
                         this._runtime.continue(false, "stopOnEvalBreakpoint");
                         const content = {
                             "type": "injectNewCode",
