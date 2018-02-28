@@ -67,11 +67,13 @@ export namespace LibSdbCompile {
                     sdbContract.sourcePath = absoluteSourcePath;
 
                     const pcMap = LibSdbUtils.nameOpCodes(new Buffer(contract.evm.deployedBytecode.object, 'hex'))[1];
+                    sdbContract.pcMap.clear();
                     Object.keys(pcMap).forEach((pc) => {
                         sdbContract.pcMap.set(parseInt(pc), pcMap[pc]);
                     });
 
                     if (contract.evm.methodIdentifiers !== undefined) {
+                        sdbContract.functionNames.clear();
                         Object.keys(contract.evm.methodIdentifiers).forEach((functionName) => {
                             const pc = LibSdbUtils.GetFunctionProgramCount(contract.evm.deployedBytecode!.object, contract.evm.methodIdentifiers![functionName]);
                             if (pc !== null) {
