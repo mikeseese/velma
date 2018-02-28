@@ -219,7 +219,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                     };
                     compileInput.sources[newFile.name] = { content: newFile.sourceCode };
                     let result: CompilerOutput = JSON.parse(LibSdbCompile.compile(JSON.stringify(compileInput)));
-                    let returnTypeString: string = "";
+                    let returnTypeString: string = "bool";
                     if (result.errors !== undefined) {
                         for (let i = 0; i < result.errors.length; i++) {
                             const error = result.errors[i];
