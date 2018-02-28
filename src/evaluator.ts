@@ -221,8 +221,8 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                     let result: CompilerOutput = JSON.parse(LibSdbCompile.compile(JSON.stringify(compileInput)));
                     let returnTypeString: string = "";
                     if (result.errors !== undefined) {
-                        for (let i = 0; i < result.errors!.length; i++) {
-                            const error = result.errors![i];
+                        for (let i = 0; i < result.errors.length; i++) {
+                            const error = result.errors[i];
                             let match = matchReturnTypeFromError(error.message);
                             if (match) {
                                 // return type
@@ -239,6 +239,20 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                     }
 
                     // TODO: stop and respond if there is a compiler error of sometype
+                    let hadError = false;
+                    if (result.errors !== undefined) {
+                        for (let i = 0; i < result.errors.length; i++) {
+                            // check to see if any errors are not warnings
+                            if (result.errors[i].severity === "error") {
+                                console.error(result.errors[i].formattedMessage || result.errors[i].message);
+                                hadError = true;
+                            }
+                        }
+                    }
+                    if (hadError) {
+                        callback();
+                        return;
+                    }
 
                     this._runtime._callStack = newCallstack;
                     this._runtime._priorUiCallStack = newPriorUiCallstack;
