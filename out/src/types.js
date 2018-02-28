@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const path_1 = require("path");
 const utils_1 = require("./utils/utils");
+const bn_js_1 = require("bn.js");
 const CircularJSON = require("circular-json");
 var LibSdbTypes;
 (function (LibSdbTypes) {
@@ -92,6 +93,7 @@ var LibSdbTypes;
         clone() {
             let clone = new Variable();
             clone.name = this.name;
+            clone.functionName = this.functionName;
             clone.type = this.type;
             clone.originalType = this.originalType;
             clone.refType = this.refType;
@@ -133,7 +135,7 @@ var LibSdbTypes;
         memoryValueToString(stack, memory) {
             if (this.position !== null && stack.length > this.position) {
                 // memory
-                const memoryLocation = parseInt(stack[this.position], 16);
+                const memoryLocation = stack[this.position].toNumber();
                 if (memoryLocation === undefined) {
                     return "(invalid memory location)";
                 }
@@ -169,7 +171,7 @@ var LibSdbTypes;
                             }
                         }).join("");
                         if (element) {
-                            const elementValue = utils_1.LibSdbUtils.interperetValue(this.type, element);
+                            const elementValue = utils_1.LibSdbUtils.interperetValue(this.type, new bn_js_1.BN(element));
                             elements.push(elementValue);
                         }
                     }

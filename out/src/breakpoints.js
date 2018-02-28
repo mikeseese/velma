@@ -15,12 +15,13 @@ class LibSdbBreakpoints {
         this._runtime = runtime;
         this._breakpointId = 1;
     }
-    setBreakPoint(path, line, visible = true, originalSource = true) {
+    setBreakpoint(path, line, visible = true, originalSource = true) {
         return __awaiter(this, void 0, void 0, function* () {
             if (!this._runtime._files.has(path)) {
                 this._runtime._files.set(path, new types_1.LibSdbTypes.File("/", path));
             }
             const file = this._runtime._files.get(path);
+            const originalLine = line;
             if (originalSource) {
                 // we need to modify the line number using line offsets with the original source bp's
                 line = utils_1.LibSdbUtils.getNewLine(line, file.lineOffsets);
@@ -37,7 +38,9 @@ class LibSdbBreakpoints {
                 }
                 yield this.verifyBreakpoints(path);
             }
-            return bp;
+            let bpForUI = bp.clone();
+            bpForUI.line = originalLine;
+            return bpForUI;
         });
     }
     verifyAllBreakpoints() {
@@ -60,7 +63,7 @@ class LibSdbBreakpoints {
                     const astWalker = new utils_1.LibSdbUtils.AstWalker();
                     const startPosition = bp.line === 0 ? 0 : file.lineBreaks[bp.line - 1] + 1;
                     const endPosition = file.lineBreaks[bp.line];
-                    let sourceLocation = null;
+                    let sourceLocations = [];
                     let address = "";
                     let index = null;
                     let pc = null;
@@ -71,31 +74,36 @@ class LibSdbBreakpoints {
                                 if (node.src) {
                                     const srcSplit = node.src.split(":");
                                     const pos = parseInt(srcSplit[0]);
-                                    if (startPosition <= pos && pos <= endPosition) {
-                                        sourceLocation = {
+                                    if (startPosition <= pos && pos <= endPosition && node.name !== "VariableDeclarationStatement" && node.name !== "VariableDeclaration") {
+                                        sourceLocations.push({
                                             start: parseInt(srcSplit[0]),
                                             length: parseInt(srcSplit[1]),
                                             file: parseInt(srcSplit[2])
-                                        };
-                                        return false;
+                                        });
                                     }
                                 }
                                 return true;
                             });
-                            if (sourceLocation !== null) {
+                            // get smallest program count? that should hypothetically be the first instruction
+                            for (let k = 0; k < sourceLocations.length; k++) {
+                                const sourceLocation = sourceLocations[k];
                                 address = contract.address;
                                 index = utils_1.LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, contract.srcmapRuntime);
                                 if (index !== null) {
                                     for (const entry of contract.pcMap.entries()) {
                                         if (entry[1] === index) {
-                                            pc = entry[0];
-                                            yield this._runtime._interface.requestSendBreakpoint(bp.id, address, pc, true);
+                                            if (pc === null || entry[0] < pc) {
+                                                pc = entry[0];
+                                            }
                                             break;
                                         }
                                     }
                                 }
-                                break;
                             }
+                            if (pc !== null) {
+                                yield this._runtime._interface.requestSendBreakpoint(bp.id, address, pc, true);
+                            }
+                            break;
                         }
                     }
                     ;
