@@ -66,7 +66,7 @@ export class LibSdbBreakpoints {
                 const astWalker = new LibSdbUtils.AstWalker();
                 const startPosition = bp.line === 0 ? 0 : file.lineBreaks[bp.line - 1] + 1;
                 const endPosition = file.lineBreaks[bp.line];
-                let sourceLocation: any = null;
+                let sourceLocations: any[] = [];
                 let address: string = "";
                 let index: number | null = null;
                 let pc: number | null = null;
@@ -78,31 +78,36 @@ export class LibSdbBreakpoints {
                                 const srcSplit = node.src.split(":");
                                 const pos = parseInt(srcSplit[0]);
                                 if (startPosition <= pos && pos <= endPosition && node.name !== "VariableDeclarationStatement" && node.name !== "VariableDeclaration") {
-                                    sourceLocation = {
+                                    sourceLocations.push({
                                         start: parseInt(srcSplit[0]),
                                         length: parseInt(srcSplit[1]),
                                         file: parseInt(srcSplit[2])
-                                    };
-                                    return false;
+                                    });
                                 }
                             }
 
                             return true;
                         });
-                        if (sourceLocation !== null) {
+                        // get smallest program count? that should hypothetically be the first instruction
+                        for (let k = 0; k < sourceLocations.length; k++) {
+                            const sourceLocation = sourceLocations[k];
                             address = contract.address;
                             index = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, contract.srcmapRuntime);
                             if (index !== null) {
                                 for (const entry of contract.pcMap.entries()) {
                                     if (entry[1] === index) {
-                                        pc = entry[0];
-                                        await this._runtime._interface.requestSendBreakpoint(bp.id, address, pc, true);
+                                        if (pc === null || entry[0] < pc) {
+                                            pc = entry[0];
+                                        }
                                         break;
                                     }
                                 }
                             }
-                            break;
                         }
+                        if (pc !== null) {
+                            await this._runtime._interface.requestSendBreakpoint(bp.id, address, pc, true);
+                        }
+                        break;
                     }
                 };
             };
