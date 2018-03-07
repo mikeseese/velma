@@ -126,6 +126,27 @@ export class LibSdbInterface {
         });
     }
 
+    public async requestSendFunctionJumpDestinations(address: string, jumpDestinations: number[]) {
+        return new Promise<any>((resolve, reject) => {
+            const msgId = uuidv4();
+            const request = {
+                "id": msgId,
+                "messageType": "request",
+                "content": {
+                    "type": "sendJumpDestinations",
+                    "address": address,
+                    "jumpDestinations": jumpDestinations
+                }
+            };
+
+            this._debuggerMessages.set(msgId, resolve);
+
+            if (this.evm !== undefined) {
+                this.evm.handleMessage(request);
+            }
+        });
+    }
+
     private async messageHandler(ws: WebSocket, message: WebSocket.Data): Promise<void> {
         const data = JSON.parse(message.toString());
 
@@ -283,14 +304,15 @@ export class LibSdbInterface {
             });
 
             if (triggerType === "linkCompilerOutput") {
-                LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.sourceRootPath, data.content.compilationResult);
+                LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._filesById, this._runtime._contractsByName, data.content.sourceRootPath, data.content.compilationResult);
                 this.respondToDebugHook("stopOnBreakpoint", data.id);
             }
             else if (triggerType === "linkContractAddress") {
                 const contract = LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, data.content.contractName, data.content.address);
                 if (contract !== null) {
                     await this._runtime._breakpoints.verifyBreakpoints(contract.sourcePath);
-                    await this._runtime.sendVariableDeclarations(contract.address);
+                    await this._runtime.sendVariableDeclarations(data.content.address.toLowerCase());
+                    await this._runtime.sendFunctionJumpDestinations(data.content.address.toLowerCase());
                 }
                 this.respondToDebugHook("stopOnBreakpoint", data.id);
             }

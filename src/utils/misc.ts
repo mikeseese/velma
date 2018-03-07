@@ -5,10 +5,9 @@ import { BN } from "bn.js";
 // bytecode is a hex string of the bytecode without the preceding '0x'
 // methodId is the SHA3 hash of the ABI for this function
 // returns the first occurence of the following bytecode sequence:
-// DUP1, PUSH4 methodId, EQ, PUSH1 pc
-// TODO: this could maybe not work depending on the different compiler optimization levels
+// DUP1, PUSH4 methodId, EQ
 export function GetFunctionProgramCount(bytecode, methodId) {
-    const bytecodeSequence = "63" + methodId + "1460";
+    const bytecodeSequence = "63" + methodId + "14";
     const pos = bytecode.indexOf(bytecodeSequence);
     if (pos < 0) {
         return null;

@@ -13,9 +13,11 @@ export namespace LibSdbTypes {
         vmData: any;
         scope: AstScope[];
         exception?: any;
+        events: string[];
 
         constructor() {
             this.scope = [];
+            this.events = [];
         }
 
         clone(): StepData {
@@ -33,6 +35,10 @@ export namespace LibSdbTypes {
 
             for (let i = 0; i < this.scope.length; i++) {
                 clone.scope.push(this.scope[i].clone());
+            }
+
+            for (let i = 0; i < this.events.length; i++) {
+                clone.events.push(this.events[i]);
             }
 
             return clone;
@@ -174,7 +180,7 @@ export namespace LibSdbTypes {
         }
 
         typeToString(): string {
-            return "";
+            return this.originalType;
         }
 
         valueToString(stack: BN[], memory: (number | null)[], storage: any): string {
@@ -196,7 +202,7 @@ export namespace LibSdbTypes {
         }
 
         stackValueToString(stack: BN[]): string {
-            if (this.position !== null && stack.length > this.position) {
+            if (this.position !== null && this.position >= 0 && this.position < stack.length) {
                 // stack
                 return LibSdbUtils.interperetValue(this.type, stack[this.position]);
             }
@@ -322,7 +328,7 @@ export namespace LibSdbTypes {
     export class Contract {
         name: string;
         sourcePath: string;
-        address: string;
+        addresses: string[];
         pcMap: Map<number, number>;
         scopeVariableMap: ScopeVariableMap;
         functionNames: Map<number, string>; // key: pc, value: hash
@@ -331,12 +337,15 @@ export namespace LibSdbTypes {
         srcmapRuntime: string;
         ast: Ast;
         numStateVariables: number;
+        breakpoints: Map<number, number>;
 
         constructor() {
             this.pcMap = new Map<number, number>();
             this.scopeVariableMap = new Map<number, VariableMap>();
             this.functionNames = new Map<number, string>();
             this.numStateVariables = 0;
+            this.addresses = [];
+            this.breakpoints = new Map<number, number>();
         }
 
         clone(): Contract {
@@ -346,7 +355,7 @@ export namespace LibSdbTypes {
 
             clone.sourcePath = this.sourcePath;
 
-            clone.address = this.address;
+            clone.addresses = JSON.parse(JSON.stringify(this.addresses));
 
             for (const v of this.pcMap) {
                 clone.pcMap.set(v[0], v[1]);
@@ -390,12 +399,14 @@ export namespace LibSdbTypes {
         public ast: Ast;
         public sourceCode: string;
         public lineBreaks: number[];
+        public sourceId: number | null;
 
         constructor(sourceRoot: string, relativePath: string) {
             this.contracts = [];
             this.breakpoints = [];
             this.lineOffsets = new Map<number, number>();
             this.lineBreaks = [];
+            this.sourceId = null;
 
             this.sourceRoot = sourceRoot;
             this.relativeDirectory = dirname(relativePath);
@@ -429,9 +440,12 @@ export namespace LibSdbTypes {
                 clone.lineBreaks.push(this.lineBreaks[i]);
             }
 
+            clone.sourceId = this.sourceId;
+
             return clone;
         }
     }
 
     export type FileMap = Map<string, File>; // key is full path/name of file
+    export type FileByIdMap = Map<number, File>; // key is full path/name of file
 }

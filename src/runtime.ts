@@ -22,6 +22,7 @@ export class LibSdbRuntime extends EventEmitter {
     public _ongoingEvaluation: LibSdbTypes.Evaluation | null;
 
     public _files: LibSdbTypes.FileMap;
+    public _filesById: LibSdbTypes.FileByIdMap;
     public _contractsByName: LibSdbTypes.ContractMap;
     public _contractsByAddress: LibSdbTypes.ContractMap;
 
@@ -37,6 +38,7 @@ export class LibSdbRuntime extends EventEmitter {
         this._evaluator = new LibSdbEvaluator(this);
 
         this._files = new Map<string, LibSdbTypes.File>();
+        this._filesById = new Map<number, LibSdbTypes.File>();
         this._contractsByName = new Map<string, LibSdbTypes.Contract>();
         this._contractsByAddress = new Map<string, LibSdbTypes.Contract>();
 
@@ -61,24 +63,98 @@ export class LibSdbRuntime extends EventEmitter {
         this._interface.respondToDebugHook(stepEvent, this._stepData.debuggerMessageId, content);
     }
 
+    private processJumpIn(sourceLocation: any, contract: LibSdbTypes.Contract, stack: any) {
+        // jump in
+
+        if (this._priorStepData) {
+            // push the prior function onto the stack. the current location for stack goes on when requested
+            const nodePrior = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
+            const functionNamePrior = nodePrior === null ? "(anonymous function)" : nodePrior.attributes.name;
+            let frame = new LibSdbTypes.StackFrame();
+            frame.name = functionNamePrior;
+            frame.file = contract.sourcePath;
+            frame.line = this._priorStepData.location.start === null ? null : this._priorStepData.location.start.line;
+            this._callStack.unshift(frame);
+        }
+
+        const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", sourceLocation, { AST: contract.ast });
+        if (node !== null && node.children.length > 0 && node.children[0].name === "ParameterList") {
+            const paramListNode = node.children[0];
+            for (let i = 0; i < paramListNode.children.length; i++) {
+                const functionArgument = paramListNode.children[i];
+                const variables = contract.scopeVariableMap.get(functionArgument.attributes.scope);
+                if (variables) {
+                    const variable = variables.get(functionArgument.attributes.name);
+                    if (variable) {
+                        variable.position = stack.length - paramListNode.children.length + i;
+                    }
+                }
+            }
+        }
+    }
+
+    private processJumpOut(contract: LibSdbTypes.Contract, stack: any, memory: any) {
+        // jump out, we should be at a JUMPDEST currently
+
+        if (this._priorStepData) {
+            const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
+            if (node !== null) {
+                const functionName = node.attributes.name;
+                if (this._ongoingEvaluation !== null && this._ongoingEvaluation.functionName === functionName) {
+                    // get variable at top of stack
+                    // TODO: add support for multiple variable evaluations
+
+                    this._ongoingEvaluation.returnVariable.position = stack.length - 1;
+
+                    const returnString = this._ongoingEvaluation.returnVariable.valueToString(stack, memory, {});
+                    this._ongoingEvaluation.callback(returnString); // TODO: storage
+
+                    this._ongoingEvaluation = null;
+                }
+            }
+        }
+
+        this._callStack.shift();
+    }
+
+    private processDeclaration(sourceLocation: any, contract: LibSdbTypes.Contract, stack: any) {
+        // is there a variable declaration here?
+        if (sourceLocation) {
+            const variableDeclarationNode = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("VariableDeclaration", sourceLocation, { AST: contract.ast });
+            if (variableDeclarationNode) {
+                const scope = variableDeclarationNode.attributes.scope;
+                const variables = contract.scopeVariableMap.get(scope);
+                if (variables) {
+                    const names = variables.keys();
+                    for (const name of names) {
+                        if (name === variableDeclarationNode.attributes.name) {
+                            let variable = variables.get(name)!;
+                            if (variable.position === null) {
+                                if (variable.location === LibSdbTypes.VariableLocation.Stack) {
+                                    variable.position = stack.length;
+                                }
+                                else if (variable.location === LibSdbTypes.VariableLocation.Memory) {
+                                    variable.position = stack.length;
+                                }
+                                if (variable.location === LibSdbTypes.VariableLocation.Storage) {
+                                    variable.position = stack.length;
+                                }
+                                break;
+                            }
+                            else {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     public vmStepped(data: any) {
-        // step through code
         this._stepData = null;
         const pc = data.content.pc;
         const address = data.content.address.toString("hex").toLowerCase();
-        let skipEvent = false;
-
-        /*if (!(address in this._contracts)) {
-          console.log("address " + address + " not monitored");
-          const response = {
-            "status": "error",
-            "id": data.id,
-            "messageType": "response",
-            "content": "address not monitored"
-          };
-          this._socket.write(CircularJSON.stringify(response));
-          return;
-        }*/
 
         if (this._contractsByAddress.get(address) === undefined) {
             this._stepData = new LibSdbTypes.StepData();
@@ -88,22 +164,14 @@ export class LibSdbRuntime extends EventEmitter {
             this._stepData.contractAddress = address;
             this._stepData.vmData = data.content;
             this._stepData.scope = [];
+            this._stepData.events = [];
             this.respondToDebugHook("stopOnBreakpoint");
         }
         else {
             const contract = this._contractsByAddress.get(address);
 
             if (!contract) {
-                // TODO: EEK HELP
-                console.error("OIDJFOIJS fixme");
-                return;
-            }
-
-            const file = this._files.get(contract.sourcePath);
-
-            if (!file) {
-                // TODO: EEK HELP
-                console.error("OIDJFOIJS fixme");
+                this.respondToDebugHook("skipEvent");
                 return;
             }
 
@@ -111,109 +179,54 @@ export class LibSdbRuntime extends EventEmitter {
             const index = contract.pcMap.get(pc);
             const sourceLocation = LibSdbUtils.SourceMappingDecoder.atIndex(index, contract.srcmapRuntime);
 
-            if (data.content.specialEvent === "jump") {
-                skipEvent = true;
+            if (data.content.specialEvents.indexOf("fnJumpDestination") >= 0) {
+                this.processJumpIn(sourceLocation, contract, data.content.stack);
+            }
+            else if (data.content.specialEvents.indexOf("jump") >= 0) {
+                let processedJump: boolean = false;
                 if (this._priorStepData && this._priorStepData.source) {
                     if (this._priorStepData.source.jump === "i") {
-                        // jump in
-
-                        // push the prior function onto the stack. the current location for stack goes on when requested
-                        const nodePrior = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
-                        const functionNamePrior = nodePrior === null ? "(anonymous function)" : nodePrior.attributes.name;
-                        let frame = new LibSdbTypes.StackFrame();
-                        frame.name = functionNamePrior;
-                        frame.file = contract.sourcePath;
-                        frame.line = this._priorStepData.location.start === null ? null : this._priorStepData.location.start.line;
-                        this._callStack.unshift(frame);
-
-                        const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", sourceLocation, { AST: contract.ast });
-                        if (node !== null && node.children.length > 0 && node.children[0].name === "ParameterList") {
-                            const paramListNode = node.children[0];
-                            for (let i = 0; i < paramListNode.children.length; i++) {
-                                const functionArgument = paramListNode.children[i];
-                                const variables = contract.scopeVariableMap.get(functionArgument.attributes.scope);
-                                if (variables) {
-                                    const variable = variables.get(functionArgument.attributes.name);
-                                    if (variable) {
-                                        variable.position = data.content.stack.length - paramListNode.children.length + i;
-                                    }
-                                }
-                            }
-                        }
+                        this.processJumpIn(sourceLocation, contract, data.content.stack);
+                        processedJump = true;
                     }
                     else if (this._priorStepData.source.jump === "o") {
-                        // jump out, we should be at a JUMPDEST currently
-                        const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
-                        if (node !== null) {
-                            const functionName = node.attributes.name;
-                            if (this._ongoingEvaluation !== null && this._ongoingEvaluation.functionName === functionName) {
-                                // get variable at top of stack
-                                // TODO: add support for multiple variable evaluations
-
-                                this._ongoingEvaluation.returnVariable.position = data.content.stack.length - 1;
-
-                                const returnString = this._ongoingEvaluation.returnVariable.valueToString(data.content.stack, data.content.memory, {});
-                                this._ongoingEvaluation.callback(returnString); // TODO: storage
-
-                                this._ongoingEvaluation = null;
-                            }
-                        }
-
-                        this._callStack.shift();
+                        this.processJumpOut(contract, data.content.stack, data.content.memory);
+                        processedJump = true;
                     }
-                    /*else if (pc in contract.functionNames) {
-                        // jump in to external function
-                        // this is the JUMPDEST of a function we just entered
+                }
 
-                        // TODO: figure this out
-                        // const functionName = contract.functionNames[pc];
-                        let frame = new LibSdbTypes.StackFrame();
-                        frame.name = "external place?";
-                        frame.file = contract.sourcePath;
-                        frame.line = 0 //currentLocation.start === null ? null : currentLocation.start.line;
-                        this._callStack.unshift(frame);
-                    }*/
+                if (!processedJump && pc in contract.functionNames) {
+                    // jump in to external function
+                    // this is the JUMPDEST of a function we just entered
+                    let frame = new LibSdbTypes.StackFrame();
+                    frame.name = contract.functionNames[pc];
+                    frame.file = contract.sourcePath;
+                    frame.line = 0 //currentLocation.start === null ? null : currentLocation.start.line;
+                    this._callStack.unshift(frame);
                 }
             }
-            else if (data.content.specialEvent === "declaration") {
-                // is there a variable declaration here?
-                if (sourceLocation) {
-                    const variableDeclarationNode = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("VariableDeclaration", sourceLocation, { AST: contract.ast });
-                    if (variableDeclarationNode) {
-                        const scope = variableDeclarationNode.attributes.scope;
-                        const variables = contract.scopeVariableMap.get(scope);
-                        if (variables) {
-                            const names = variables.keys();
-                            for (const name of names) {
-                                if (name === variableDeclarationNode.attributes.name) {
-                                    let variable = variables.get(name)!;
-                                    if (variable.position === null) {
-                                        if (variable.location === LibSdbTypes.VariableLocation.Stack) {
-                                            variable.position = data.content.stack.length;
-                                        }
-                                        else if (variable.location === LibSdbTypes.VariableLocation.Memory) {
-                                            variable.position = data.content.stack.length;
-                                        }
-                                        if (variable.location === LibSdbTypes.VariableLocation.Storage) {
-                                            variable.position = data.content.stack.length;
-                                        }
-                                        skipEvent = true;
-                                        break;
-                                    }
-                                    else {
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            else if (data.content.specialEvents.indexOf("declaration") >= 0) {
+                this.processDeclaration(sourceLocation, contract, data.content.stack);
             }
 
             // find current scope
             const currentScope = LibSdbUtils.findScope(sourceLocation.start, contract.ast);
 
-            const currentLocation = LibSdbUtils.SourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, file.lineBreaks);
+            const fileId = parseInt(sourceLocation.file);
+            let file: LibSdbTypes.File;
+            if (!isNaN(fileId)) {
+                file = this._filesById.get(fileId)!;
+            }
+            else {
+                file = this._files.get(contract.sourcePath)!;
+            }
+
+            let currentLocation = {
+                start: null
+            };
+            if (file) {
+                currentLocation = LibSdbUtils.SourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, file.lineBreaks);
+            }
 
             this._stepData = new LibSdbTypes.StepData();
             this._stepData.debuggerMessageId = data.id;
@@ -222,11 +235,16 @@ export class LibSdbRuntime extends EventEmitter {
             this._stepData.contractAddress = address;
             this._stepData.vmData = data.content;
             this._stepData.scope = currentScope;
+            this._stepData.events = data.content.specialEvents;
             if (data.exceptionError !== undefined) {
                 this._stepData.exception = data.exceptionError;
             }
 
-            if (skipEvent) {
+            if (!file) {
+                this.respondToDebugHook("skipEvent");
+            }
+            else if (data.content.specialEvents.length > 0 && data.content.specialEvents.indexOf("breakpoint") === -1 && data.exceptionError === undefined) {
+                // if there were any special events, none of them were a breakpoint, and there was no exception, skip the event
                 this.respondToDebugHook("skipEvent");
             }
             else {
@@ -238,28 +256,39 @@ export class LibSdbRuntime extends EventEmitter {
     public stack(startFrame: number, endFrame: number): any {
         const frames = new Array<any>();
 
-        if (this._stepData !== null) {
-            const contract = this._contractsByAddress.get(this._stepData.contractAddress)!;
-            const file = this._files.get(contract.sourcePath)!;
-            const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, { AST: contract.ast });
-            const functionName = node.attributes.name;
-            if (startFrame === 0 && this._stepData.location && this._stepData.location.start) {
+        try {
+            if (this._stepData !== null) {
+                const contract = this._contractsByAddress.get(this._stepData.contractAddress)!;
+                const fileId = parseInt(this._stepData.source.file);
+                let file: LibSdbTypes.File;
+                if (!isNaN(fileId)) {
+                    file = this._filesById.get(fileId)!;
+                }
+                else {
+                    file = this._files.get(contract.sourcePath)!;
+                }
+                const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, { AST: file.ast });
+                if (startFrame === 0 && this._stepData.location && this._stepData.location.start) {
+                    frames.push({
+                        "index": startFrame,
+                        "name": node === null ? "(anonymous function)" : node.attributes.name,
+                        "file": file.fullPath(),
+                        "line": LibSdbUtils.getOriginalLine(this._stepData.location.start.line, file.lineOffsets)
+                    });
+                }
+            }
+
+            for (let i = startFrame; i < Math.min(endFrame, this._callStack.length); i++) {
                 frames.push({
-                    "index": startFrame,
-                    "name": functionName,
-                    "file": contract.sourcePath,
-                    "line": LibSdbUtils.getOriginalLine(this._stepData.location.start.line, file.lineOffsets)
+                    "index": i + 1, // offset by one due to the current line "at the top of the stack", but not in the callstack variable
+                    "name": this._callStack[i].name,
+                    "file": this._callStack[i].file,
+                    "line": LibSdbUtils.getOriginalLine(this._callStack[i].line, this._files.get(this._callStack[i].file)!.lineOffsets)
                 });
             }
         }
-
-        for (let i = startFrame; i < Math.min(endFrame, this._callStack.length); i++) {
-            frames.push({
-                "index": i + 1, // offset by one due to the current line "at the top of the stack", but not in the callstack variable
-                "name": this._callStack[i].name,
-                "file": this._callStack[i].file,
-                "line": LibSdbUtils.getOriginalLine(this._callStack[i].line, this._files.get(this._callStack[i].file)!.lineOffsets)
-            });
+        catch (e) {
+            console.error(e);
         }
 
         return {
@@ -272,6 +301,49 @@ export class LibSdbRuntime extends EventEmitter {
         let variables: any[] = [];
 
         if (this._stepData !== null) {
+            variables.push({
+                name: "Contract Address",
+                evaluateName: "Contract Address",
+                type: "string",
+                value: this._stepData.contractAddress,
+                variablesReference: 0
+            });
+            variables.push({
+                name: "Contract Name",
+                evaluateName: "Contract Name",
+                type: "string",
+                value: this._contractsByAddress.get(this._stepData.contractAddress)!.name,
+                variablesReference: 0
+            });
+            variables.push({
+                name: "Contract Code",
+                evaluateName: "Contract Code",
+                type: "string",
+                value: this._contractsByAddress.get(this._stepData.contractAddress)!.runtimeBytecode,
+                variablesReference: 0
+            });
+            variables.push({
+                name: "Program Counter",
+                evaluateName: "Program Counter",
+                type: "number",
+                value: this._stepData.vmData.pc + "",
+                variablesReference: 0
+            });
+            variables.push({
+                name: "Next OpCode",
+                evaluateName: "Next OpCode",
+                type: "string",
+                value: this._stepData.vmData.opcode.name,
+                variablesReference: 0
+            });
+            variables.push({
+                name: "Stack Length",
+                evaluateName: "Stack Length",
+                type: "number",
+                value: this._stepData.vmData.stack.length + "",
+                variablesReference: 0
+            });
+
             const stack = this._stepData.vmData.stack;
             const memory = this._stepData.vmData.memory;
             const storage = {}; // TODO:
@@ -320,6 +392,7 @@ export class LibSdbRuntime extends EventEmitter {
 
                         variables.push({
                             name: name,
+                            evaluateName: name,
                             type: variable.typeToString(),
                             value: value,
                             variablesReference: 0
@@ -372,16 +445,6 @@ export class LibSdbRuntime extends EventEmitter {
 
         if (reverse) {
             // TODO: implement reverse running
-
-            /*for (let ln = this._currentLine-1; ln >= 0; ln--) {
-              if (this.fireEventsForLine(ln, stepEvent)) {
-                this._currentLine = ln;
-                return;
-              }
-            }
-            // no more lines: stop at first line
-            this._currentLine = 0;
-            this._interface.sendEvent('stopOnEntry');*/
         } else {
             this.on("step", function handler(this: LibSdbRuntime) {
                 if (this.fireEventsForStep(stepEvent)) {
@@ -408,7 +471,14 @@ export class LibSdbRuntime extends EventEmitter {
         }
 
         const contract = this._contractsByAddress.get(this._stepData.contractAddress)!;
-        const file = this._files.get(contract.sourcePath)!;
+        const fileId = parseInt(this._stepData.source.file);
+        let file: LibSdbTypes.File;
+        if (!isNaN(fileId)) {
+            file = this._filesById.get(fileId)!;
+        }
+        else {
+            file = this._files.get(contract.sourcePath)!;
+        }
         const ln = this._stepData.location.start.line;
 
         if (this._stepData.exception !== undefined) {
@@ -419,22 +489,23 @@ export class LibSdbRuntime extends EventEmitter {
         if (this._priorUiCallStack && this._priorUiStepData) {
             const callDepthChange = this._callStack.length - this._priorUiCallStack.length;
             const differentLine = ln !== this._priorUiStepData.location.start.line;
+            const sameFile = this._stepData.source.file === this._priorUiStepData.source.file;
             switch (stepEvent) {
                 case "stopOnStepOver":
-                    if (callDepthChange === 0 && differentLine) {
+                    if (callDepthChange === 0 && differentLine && sameFile) {
                         this._interface.sendEvent("stopOnStepOver");
                         return true;
                     }
                     break;
                 case "stopOnStepIn":
-                    const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, { AST: contract.ast });
-                    if (callDepthChange > 0 && differentLine && node !== null) {
+                    const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._stepData.source, { AST: file.ast });
+                    if (callDepthChange > 0 && (!sameFile || differentLine) && node !== null) {
                         this._interface.sendEvent("stopOnStepIn");
                         return true;
                     }
                     break;
                 case "stopOnStepOut":
-                    if (callDepthChange < 0 && differentLine) {
+                    if (callDepthChange < 0 && (!sameFile || differentLine)) {
                         this._interface.sendEvent("stopOnStepOut");
                         return true;
                     }
@@ -444,27 +515,31 @@ export class LibSdbRuntime extends EventEmitter {
             }
         }
 
-        // is there a breakpoint?
-        let priorLine = null;
-        if (this._priorUiStepData && this._priorUiStepData.location.start) {
-            priorLine = this._priorUiStepData.location.start.line;
-        }
-
-        const bps = file.breakpoints.filter(bp => bp.line === ln && (priorLine === null || ln !== priorLine) && ((bp.visible && stepEvent !== "stopOnEvalBreakpoint") || (!bp.visible && stepEvent === "stopOnEvalBreakpoint")));
-
-        if (bps.length > 0) {
-            // send 'stopped' event
-            this._interface.sendEvent('stopOnBreakpoint');
-
-            // the following shows the use of 'breakpoint' events to update properties of a breakpoint in the UI
-            // if breakpoint is not yet verified, verify it now and send a 'breakpoint' update event
-            if (!bps[0].verified) {
-                bps[0].verified = true;
-                this._interface.sendEvent('breakpointValidated', bps[0]);
+        if (file !== undefined) {
+            // is there a breakpoint?
+            let differentLine: boolean = false;
+            let sameFile: boolean = true;
+            if (this._priorUiStepData) {
+                differentLine = ln !== this._priorUiStepData.location.start.line;
+                sameFile = this._stepData.source.file === this._priorUiStepData.source.file;
             }
 
-            // halt execution since we just hit a breakpoint
-            return true;
+            const bps = file.breakpoints.filter(bp => bp.line === ln && (this._priorUiStepData === null || !sameFile || differentLine) && ((bp.visible && stepEvent !== "stopOnEvalBreakpoint") || (!bp.visible && stepEvent === "stopOnEvalBreakpoint")));
+
+            if (bps.length > 0) {
+                // send 'stopped' event
+                this._interface.sendEvent('stopOnBreakpoint');
+
+                // the following shows the use of 'breakpoint' events to update properties of a breakpoint in the UI
+                // if breakpoint is not yet verified, verify it now and send a 'breakpoint' update event
+                if (!bps[0].verified) {
+                    bps[0].verified = true;
+                    this._interface.sendEvent('breakpointValidated', bps[0]);
+                }
+
+                // halt execution since we just hit a breakpoint
+                return true;
+            }
         }
 
         // nothing interesting found -> continue
@@ -502,7 +577,43 @@ export class LibSdbRuntime extends EventEmitter {
                 return true;
             });
             if (declarations.length > 0) {
-                await this._interface.requestSendVariableDeclarations(contract.address, declarations);
+                await this._interface.requestSendVariableDeclarations(address, declarations);
+            }
+        }
+    }
+
+    public async sendFunctionJumpDestinations(address: string): Promise<void> {
+        const contract = this._contractsByAddress.get(address);
+        const jumpDestinations: number[] = [];
+        if (contract) {
+            let indexMap = new Map<number, number>();
+            for (const entry of contract.pcMap.entries()) {
+                indexMap.set(entry[1], entry[0]);
+            }
+            const astWalker = new LibSdbUtils.AstWalker();
+            astWalker.walk(contract.ast, (node) => {
+                if (node.name === "FunctionDefinition" && node.src) {
+                    const srcSplit = node.src.split(":");
+                    const sourceLocation = {
+                        start: parseInt(srcSplit[0]),
+                        length: parseInt(srcSplit[1]),
+                        file: parseInt(srcSplit[2])
+                    };
+                    const index = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, contract.srcmapRuntime);
+                    if (index !== null) {
+                        const pc = indexMap.get(index);
+                        if (pc !== undefined) {
+                            jumpDestinations.push(pc);
+                        }
+                    }
+
+                    return false;
+                }
+
+                return true;
+            });
+            if (jumpDestinations.length > 0) {
+                await this._interface.requestSendFunctionJumpDestinations(address, jumpDestinations);
             }
         }
     }

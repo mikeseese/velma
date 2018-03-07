@@ -8,7 +8,7 @@ import { LibSdbUtils } from "./utils/utils";
 export namespace LibSdbCompile {
     export const compile = solcCompile;
 
-    export function linkCompilerOutput(_files: LibSdbTypes.FileMap, _contractsByName: LibSdbTypes.ContractMap, _contractsByAddress: LibSdbTypes.ContractMap, sourceRootPath: string, compilationResult: CompilerOutput): boolean {
+    export function linkCompilerOutput(_files: LibSdbTypes.FileMap, _filesById: LibSdbTypes.FileByIdMap, _contractsByName: LibSdbTypes.ContractMap, sourceRootPath: string, compilationResult: CompilerOutput): boolean {
         if (compilationResult.sources === undefined) {
             // cant do anything if we don't get the right data, this is invalid
             return false;
@@ -103,6 +103,9 @@ export namespace LibSdbCompile {
             const file = _files.get(sourcePath);
 
             if (file) {
+                file.sourceId = compilationResult.sources[source].id;
+                _filesById.set(file.sourceId, file);
+
                 // assign AST from the compilationResult.sources variable to each SdbFile
                 file.ast = compilationResult.sources[source].legacyAST;
 
@@ -161,12 +164,8 @@ export namespace LibSdbCompile {
             }
         };
 
-        // get variable declarations for each SdbContract AST
+        // save temporary map to official map
         contractNameMap.forEach((contract, key) => {
-            if (_contractsByName.has(key)) {
-                contract.address = _contractsByName.get(key)!.address;
-                _contractsByAddress.set(contract.address, contract);
-            }
             _contractsByName.set(key, contract);
         });
 
@@ -215,8 +214,8 @@ export namespace LibSdbCompile {
     export function linkContractAddress(_contractsByName: LibSdbTypes.ContractMap, _contractsByAddress: LibSdbTypes.ContractMap, name: string, address: string): LibSdbTypes.Contract | null {
         if (_contractsByName.has(name)) {
             const contract = _contractsByName.get(name)!;
-            contract.address = address.toLowerCase();
-            _contractsByAddress.set(contract.address, contract);
+            contract.addresses.push(address.toLowerCase());
+            _contractsByAddress.set(address.toLowerCase(), contract);
             return contract;
         }
         else {

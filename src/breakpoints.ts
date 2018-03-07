@@ -67,12 +67,11 @@ export class LibSdbBreakpoints {
                 const startPosition = bp.line === 0 ? 0 : file.lineBreaks[bp.line - 1] + 1;
                 const endPosition = file.lineBreaks[bp.line];
                 let sourceLocations: any[] = [];
-                let address: string = "";
                 let index: number | null = null;
                 let pc: number | null = null;
                 for (let j = 0; j < file.contracts.length; j++) {
                     const contract = file.contracts[j];
-                    if (contract.address !== "") {
+                    if (contract.addresses.length > 0) {
                         astWalker.walk(contract.ast, (node) => {
                             if (node.src) {
                                 const srcSplit = node.src.split(":");
@@ -91,7 +90,6 @@ export class LibSdbBreakpoints {
                         // get smallest program count? that should hypothetically be the first instruction
                         for (let k = 0; k < sourceLocations.length; k++) {
                             const sourceLocation = sourceLocations[k];
-                            address = contract.address;
                             index = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, contract.srcmapRuntime);
                             if (index !== null) {
                                 for (const entry of contract.pcMap.entries()) {
@@ -105,7 +103,10 @@ export class LibSdbBreakpoints {
                             }
                         }
                         if (pc !== null) {
-                            await this._runtime._interface.requestSendBreakpoint(bp.id, address, pc, true);
+                            contract.breakpoints.set(bp.id, pc);
+                            for (let k = 0; k < contract.addresses.length; k++) {
+                                await this._runtime._interface.requestSendBreakpoint(bp.id, contract.addresses[k], pc, true);
+                            }
                         }
                         break;
                     }
@@ -121,6 +122,9 @@ export class LibSdbBreakpoints {
             const index = file.breakpoints.findIndex(bp => bp.line === line);
             if (index >= 0) {
                 const bp = file.breakpoints[index];
+                for (let i = 0; i < file.contracts.length; i++) {
+                    file.contracts[i].breakpoints.delete(bp.id);
+                }
                 await this._runtime._interface.requestSendBreakpoint(bp.id, "", 0, false);
                 file.breakpoints.splice(index, 1);
                 return bp;
@@ -135,6 +139,9 @@ export class LibSdbBreakpoints {
 
         if (file) {
             for (let i = 0; i < file.breakpoints.length; i++) {
+                for (let j = 0; j < file.contracts.length; j++) {
+                    file.contracts[j].breakpoints.delete(file.breakpoints[i].id);
+                }
                 await this._runtime._interface.requestSendBreakpoint(file.breakpoints[i].id, "", 0, false);
             }
             file.breakpoints = [];

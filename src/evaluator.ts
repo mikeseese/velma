@@ -94,7 +94,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
     }
 
     public async evaluate(expression: string, context: string | undefined, frameId: number | undefined, callback): Promise<void> {
-        if (this._runtime._stepData === null) {
+        if (this._runtime._stepData === null || expression === undefined || context === undefined) {
             return;
         }
 
@@ -263,7 +263,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                     this._runtime._files.set(newFile.fullPath(), newFile);
                     this._runtime._contractsByAddress.set(this._runtime._stepData.contractAddress, newContract);
 
-                    LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._contractsByName, this._runtime._contractsByAddress, newFile.sourceRoot, result);
+                    LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._filesById, this._runtime._contractsByName, newFile.sourceRoot, result);
                     newContract = this._runtime._contractsByAddress.get(this._runtime._stepData.contractAddress)!;
 
                     const astWalker = new LibSdbUtils.AstWalker();
@@ -327,7 +327,10 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         LibSdbUtils.applyVariableType(this._runtime._ongoingEvaluation.returnVariable, false, "default", "ParameterList");
 
                         // push the code
-                        await this._runtime.sendVariableDeclarations(newContract.address);
+                        for (let i = 0; i < newContract.addresses.length; i++) {
+                            await this._runtime.sendVariableDeclarations(newContract.addresses[i]);
+                            await this._runtime.sendFunctionJumpDestinations(newContract.addresses[i]);
+                        }
                         this._runtime.continue(false, "stopOnEvalBreakpoint");
                         const content = {
                             "type": "injectNewCode",
