@@ -63,7 +63,7 @@ export class LibSdbRuntime extends EventEmitter {
         this._interface.respondToDebugHook(stepEvent, this._stepData.debuggerMessageId, content);
     }
 
-    private processJumpIn(sourceLocation: any, contract: LibSdbTypes.Contract, stack: any) {
+    private processJumpIn(sourceLocation: any, contract: LibSdbTypes.Contract, stack: any, isExternal: boolean = false) {
         // jump in
 
         if (this._priorStepData) {
@@ -80,13 +80,17 @@ export class LibSdbRuntime extends EventEmitter {
         const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", sourceLocation, { AST: contract.ast });
         if (node !== null && node.children.length > 0 && node.children[0].name === "ParameterList") {
             const paramListNode = node.children[0];
+            let numReturnVariables = 0;
+            if (node.children.length > 1 && node.children[1].name === "ParameterList") {
+                numReturnVariables = node.children[1].children.length;
+            }
             for (let i = 0; i < paramListNode.children.length; i++) {
                 const functionArgument = paramListNode.children[i];
                 const variables = contract.scopeVariableMap.get(functionArgument.attributes.scope);
                 if (variables) {
                     const variable = variables.get(functionArgument.attributes.name);
                     if (variable) {
-                        variable.position = stack.length - paramListNode.children.length + i;
+                        variable.position = stack.length + i + (isExternal ? numReturnVariables : -paramListNode.children.length);
                     }
                 }
             }
@@ -180,7 +184,7 @@ export class LibSdbRuntime extends EventEmitter {
             const sourceLocation = LibSdbUtils.SourceMappingDecoder.atIndex(index, contract.srcmapRuntime);
 
             if (data.content.specialEvents.indexOf("fnJumpDestination") >= 0) {
-                this.processJumpIn(sourceLocation, contract, data.content.stack);
+                this.processJumpIn(sourceLocation, contract, data.content.stack, true);
             }
             else if (data.content.specialEvents.indexOf("jump") >= 0) {
                 let processedJump: boolean = false;
