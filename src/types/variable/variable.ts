@@ -5,6 +5,8 @@ import { decode as decodeStack } from "./decode/stack";
 import { decode as decodeMemory } from "./decode/memory";
 import { decode as decodeStorage } from "./decode/storage";
 
+import { applyType } from "./applyType";
+
 export enum VariableLocation {
     Stack,
     Memory,
@@ -90,5 +92,9 @@ export class Variable {
                 break;
         }
         return v;
+    }
+
+    applyType(stateVariable: boolean, storageLocation: string, parentName: string): void {
+        applyType(this, stateVariable, storageLocation, parentName);
     }
 }

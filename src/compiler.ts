@@ -203,7 +203,7 @@ export namespace LibSdbCompile {
         variable.scope.childIndex = childIndex;
         variable.scope.depth = depth;
         variable.position = position;
-        LibSdbUtils.applyVariableType(variable, node.attributes.stateVariable, node.attributes.storageLocation, parent.name);
+        variable.applyType(node.attributes.stateVariable, node.attributes.storageLocation, parent.name);
         if (variable.position === null && node.attributes.stateVariable) {
             variable.position = contract.numStateVariables;
             contract.numStateVariables++;

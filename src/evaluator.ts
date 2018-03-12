@@ -365,7 +365,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         this._runtime._ongoingEvaluation.functionName = functionInsert.name;
                         this._runtime._ongoingEvaluation.callback = callback;
                         this._runtime._ongoingEvaluation.returnVariable.originalType = returnTypeString;
-                        LibSdbUtils.applyVariableType(this._runtime._ongoingEvaluation.returnVariable, false, "default", "ParameterList");
+                        this._runtime._ongoingEvaluation.returnVariable.applyType(false, "default", "ParameterList");
 
                         // push the code
                         for (let i = 0; i < newContract.addresses.length; i++) {
