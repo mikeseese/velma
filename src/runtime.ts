@@ -1,5 +1,4 @@
 import { EventEmitter } from "events";
-import { BN } from "bn.js";
 
 import { LibSdbTypes } from "./types/types";
 import { LibSdbUtils } from "./utils/utils";
@@ -110,8 +109,8 @@ export class LibSdbRuntime extends EventEmitter {
 
                     this._ongoingEvaluation.returnVariable.position = stack.length - 1;
 
-                    const returnString = this._ongoingEvaluation.returnVariable.decode(stack, memory, this._interface, this._ongoingEvaluation.contractAddress);
-                    this._ongoingEvaluation.callback(returnString); // TODO: storage
+                    const returnValue = this._ongoingEvaluation.returnVariable.decode(stack, memory, this._interface, this._ongoingEvaluation.contractAddress);
+                    this._ongoingEvaluation.callback(returnValue);
 
                     this._ongoingEvaluation = null;
                 }
@@ -361,13 +360,7 @@ export class LibSdbRuntime extends EventEmitter {
                         // TODO: more advanced array display
                         const value = await variable.decode(stack, memory, this._interface, this._stepData.contractAddress);
 
-                        variables.push({
-                            name: name,
-                            evaluateName: name,
-                            type: variable.typeToString(),
-                            value: value,
-                            variablesReference: 0
-                        });
+                        variables.push(value);
                     }
                 }
             }
