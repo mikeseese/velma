@@ -366,6 +366,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         this._runtime._ongoingEvaluation.callback = callback;
                         this._runtime._ongoingEvaluation.returnVariable.originalType = returnTypeString;
                         this._runtime._ongoingEvaluation.returnVariable.applyType(false, "default", "ParameterList");
+                        this._runtime._ongoingEvaluation.contractAddress = this._runtime._stepData.contractAddress;
 
                         // push the code
                         for (let i = 0; i < newContract.addresses.length; i++) {

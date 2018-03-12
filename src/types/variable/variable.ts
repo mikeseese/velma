@@ -1,4 +1,5 @@
 import { AstScope } from "../astScope";
+import { LibSdbInterface } from "../../interface";
 import { BN } from "bn.js";
 
 import { decode as decodeStack } from "./decode/stack";
@@ -76,7 +77,7 @@ export class Variable {
         return this.originalType;
     }
 
-    decode(stack: BN[], memory: (number | null)[], storage: any): string {
+    async decode(stack: BN[], memory: (number | null)[], _interface: LibSdbInterface, address: string): Promise<string> {
         let v: string = "";
         switch (this.location) {
             case VariableLocation.Stack:
@@ -86,7 +87,7 @@ export class Variable {
                 v = decodeMemory(this, stack, memory);
                 break;
             case VariableLocation.Storage:
-                v = decodeStorage(this);
+                v = await decodeStorage(this, _interface, address);
                 break;
             default:
                 break;

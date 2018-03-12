@@ -110,7 +110,7 @@ export class LibSdbRuntime extends EventEmitter {
 
                     this._ongoingEvaluation.returnVariable.position = stack.length - 1;
 
-                    const returnString = this._ongoingEvaluation.returnVariable.decode(stack, memory, {});
+                    const returnString = this._ongoingEvaluation.returnVariable.decode(stack, memory, this._interface, this._ongoingEvaluation.contractAddress);
                     this._ongoingEvaluation.callback(returnString); // TODO: storage
 
                     this._ongoingEvaluation = null;
@@ -350,7 +350,6 @@ export class LibSdbRuntime extends EventEmitter {
 
             const stack = this._stepData.vmData.stack;
             const memory = this._stepData.vmData.memory;
-            const storage = {}; // TODO:
             const contract = this._contractsByAddress.get(this._stepData.contractAddress)!;
             for (let i = 0; i < this._stepData.scope.length; i++) {
                 const scope = this._stepData.scope[i];
@@ -360,39 +359,7 @@ export class LibSdbRuntime extends EventEmitter {
                     const variable = scopeVars.get(name);
                     if (variable) {
                         // TODO: more advanced array display
-                        let value = "";
-
-                        if (variable.location === LibSdbTypes.VariableLocation.Storage) {
-                            if (variable.position === null) {
-                                value = "(storage location undefined)";
-                            }
-                            else {
-                                let key: Buffer = new Buffer(32);
-                                if (variable.refType === LibSdbTypes.VariableRefType.None) {
-                                    key[31] = variable.position;
-                                    const content = await this._interface.requestStorage(this._stepData.contractAddress, key);
-                                    value = LibSdbUtils.interperetValue(variable.type, new BN(content.value));
-                                }
-                                else {
-                                    if (variable.refType === LibSdbTypes.VariableRefType.Array && !variable.arrayIsDynamic) {
-                                        let values: string[] = [];
-                                        for (let j = 0; j < variable.arrayLength; j++) {
-                                            key[31] = variable.position + j;
-                                            const address = this._stepData.contractAddress;
-                                            const content = await this._interface.requestStorage(address, key);
-                                            values.push(LibSdbUtils.interperetValue(variable.type, new BN(content.value)));
-                                        }
-                                        value = JSON.stringify(values);
-                                    }
-                                    else {
-                                        value = "(storage for type unsupported)";
-                                    }
-                                }
-                            }
-                        }
-                        else {
-                            value = variable.decode(stack, memory, storage);
-                        }
+                        const value = await variable.decode(stack, memory, this._interface, this._stepData.contractAddress);
 
                         variables.push({
                             name: name,

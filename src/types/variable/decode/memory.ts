@@ -1,6 +1,5 @@
 import { Variable, VariableValueType, VariableRefType } from "../variable";
-
-import { LibSdbUtils } from "../../../utils/utils";
+import { decode as decodeValue } from "./value";
 import { BN } from "bn.js";
 
 export function decode(variable: Variable, stack: BN[], memory: (number | null)[]): string {
@@ -42,7 +41,7 @@ export function decode(variable: Variable, stack: BN[], memory: (number | null)[
                     }
                 }).join("");
                 if (element) {
-                    const elementValue = LibSdbUtils.interperetValue(variable.type, new BN(element));
+                    const elementValue = decodeValue(variable.type, new BN(element));
                     elements.push(elementValue);
                 }
             }

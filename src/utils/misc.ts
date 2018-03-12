@@ -96,52 +96,6 @@ export function findScope(index: number, ast: LibSdbTypes.Ast): LibSdbTypes.AstS
     return scope;
 }
 
-export function interperetValue(variableType: LibSdbTypes.VariableValueType, value: BN) {
-    let v: string = "";
-    //let num;
-    switch (variableType) {
-        case LibSdbTypes.VariableValueType.Boolean:
-            v = value.eqn(1) ? "true" : "false";
-            break;
-        case LibSdbTypes.VariableValueType.UnsignedInteger:
-            v = value.toString();
-            break;
-        case LibSdbTypes.VariableValueType.Integer:
-            v = value.fromTwos(256).toString();
-            break;
-        case LibSdbTypes.VariableValueType.FixedPoint:
-            // not supported yet in Solidity (2/21/2018) per solidity.readthedocs.io
-            break;
-        case LibSdbTypes.VariableValueType.Address:
-            v = value.toString(16);
-            break;
-        case LibSdbTypes.VariableValueType.FixedByteArray:
-            const byteArrayStr = value.toString(16).match(/.{2}/g);
-            let byteArray: number[];
-            if (byteArrayStr !== null) {
-                byteArray = byteArrayStr.map((val, idx) => {
-                    return parseInt(val, 16);
-                });
-            }
-            else {
-                byteArray = [];
-            }
-            v = JSON.stringify(byteArray);
-            break;
-        case LibSdbTypes.VariableValueType.Enum:
-            // TODO:
-            break;
-        case LibSdbTypes.VariableValueType.Function:
-            // TODO:
-            break;
-        case LibSdbTypes.VariableValueType.None:
-        default:
-            v = "";
-            break;
-    }
-    return v;
-}
-
 /*
    Binary Search:
    Assumes that @arg array is sorted increasingly
