@@ -1,7 +1,7 @@
 import { EventEmitter } from "events";
 import { BN } from "bn.js";
 
-import { LibSdbTypes } from "./types";
+import { LibSdbTypes } from "./types/types";
 import { LibSdbUtils } from "./utils/utils";
 import { LibSdbInterface } from "./interface";
 import { LibSdbBreakpoints } from "./breakpoints";

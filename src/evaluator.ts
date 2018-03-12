@@ -3,7 +3,7 @@ const traverse = require("traverse");
 const uuidv4 = require("uuid").v4;
 const CircularJSON = require("circular-json");
 
-import { LibSdbTypes } from "./types";
+import { LibSdbTypes } from "./types/types";
 import { LibSdbUtils } from "./utils/utils";
 import { LibSdbCompile } from "./compiler";
 import { LibSdbRuntime } from "./runtime";

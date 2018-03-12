@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import { join as joinPath, dirname } from "path";
 import { compileStandardWrapper as solcCompile, CompilerOutput } from "solc";
 
-import { LibSdbTypes } from "./types";
+import { LibSdbTypes } from "./types/types";
 import { LibSdbUtils } from "./utils/utils";
 
 export namespace LibSdbCompile {
