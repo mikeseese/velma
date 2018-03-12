@@ -229,4 +229,7 @@ export function applyVariableType(variable: LibSdbTypes.Variable, stateVariable:
         variable.arrayIsDynamic = false; // TODO: support dynamic sized arrays
         variable.arrayLength = parseInt(arrayMatch[1]) || 0;
     }
+    else if (varType.startsWith("struct")) {
+        variable.refType = LibSdbTypes.VariableRefType.Struct;
+    }
 }

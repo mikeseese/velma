@@ -110,7 +110,7 @@ export class LibSdbRuntime extends EventEmitter {
 
                     this._ongoingEvaluation.returnVariable.position = stack.length - 1;
 
-                    const returnString = this._ongoingEvaluation.returnVariable.valueToString(stack, memory, {});
+                    const returnString = this._ongoingEvaluation.returnVariable.decode(stack, memory, {});
                     this._ongoingEvaluation.callback(returnString); // TODO: storage
 
                     this._ongoingEvaluation = null;
@@ -391,7 +391,7 @@ export class LibSdbRuntime extends EventEmitter {
                             }
                         }
                         else {
-                            value = variable.valueToString(stack, memory, storage);
+                            value = variable.decode(stack, memory, storage);
                         }
 
                         variables.push({

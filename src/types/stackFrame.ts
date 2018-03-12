@@ -1,21 +1,21 @@
 
 export class StackFrame {
-  name: string;
-  file: string;
-  line: number;
+    name: string;
+    file: string;
+    line: number;
 
-  constructor() {
-  }
+    constructor() {
+    }
 
-  clone(): StackFrame {
-      let clone = new StackFrame();
+    clone(): StackFrame {
+        let clone = new StackFrame();
 
-      clone.name = this.name;
+        clone.name = this.name;
 
-      clone.file = this.file;
+        clone.file = this.file;
 
-      clone.line = this.line;
+        clone.line = this.line;
 
-      return clone;
-  }
+        return clone;
+    }
 }

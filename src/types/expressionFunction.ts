@@ -1,31 +1,31 @@
-import { Variable } from "./variable";
+import { Variable } from "./variable/variable";
 
 export class ExpressionFunction {
-  name: string;
-  args: Variable[];
-  argsString: string;
-  reference: string;
-  code: string;
+    name: string;
+    args: Variable[];
+    argsString: string;
+    reference: string;
+    code: string;
 
-  constructor() {
-      this.args = [];
-  }
+    constructor() {
+        this.args = [];
+    }
 
-  clone(): ExpressionFunction {
-      let clone = new ExpressionFunction();
+    clone(): ExpressionFunction {
+        let clone = new ExpressionFunction();
 
-      clone.name = this.name;
+        clone.name = this.name;
 
-      for (let i = 0; i < this.args.length; i++) {
-          clone.args.push(this.args[i].clone());
-      }
+        for (let i = 0; i < this.args.length; i++) {
+            clone.args.push(this.args[i].clone());
+        }
 
-      clone.argsString = this.argsString;
+        clone.argsString = this.argsString;
 
-      clone.reference = this.reference;
+        clone.reference = this.reference;
 
-      clone.code = this.code;
+        clone.code = this.code;
 
-      return clone;
-  }
+        return clone;
+    }
 }
