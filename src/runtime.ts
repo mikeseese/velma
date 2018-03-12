@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import { DebugProtocol } from "vscode-debugprotocol";
 
 import { LibSdbTypes } from "./types/types";
 import { LibSdbUtils } from "./utils/utils";
@@ -300,67 +301,72 @@ export class LibSdbRuntime extends EventEmitter {
         };
     }
 
-    public async variables(): Promise<any[]> {
+    public async variables(args: DebugProtocol.VariablesArguments): Promise<any[]> {
         let variables: any[] = [];
 
-        if (this._stepData !== null) {
-            variables.push({
-                name: "Contract Address",
-                evaluateName: "Contract Address",
-                type: "string",
-                value: this._stepData.contractAddress,
-                variablesReference: 0
-            });
-            variables.push({
-                name: "Contract Name",
-                evaluateName: "Contract Name",
-                type: "string",
-                value: this._contractsByAddress.get(this._stepData.contractAddress)!.name,
-                variablesReference: 0
-            });
-            variables.push({
-                name: "Contract Code",
-                evaluateName: "Contract Code",
-                type: "string",
-                value: this._contractsByAddress.get(this._stepData.contractAddress)!.runtimeBytecode,
-                variablesReference: 0
-            });
-            variables.push({
-                name: "Program Counter",
-                evaluateName: "Program Counter",
-                type: "number",
-                value: this._stepData.vmData.pc + "",
-                variablesReference: 0
-            });
-            variables.push({
-                name: "Next OpCode",
-                evaluateName: "Next OpCode",
-                type: "string",
-                value: this._stepData.vmData.opcode.name,
-                variablesReference: 0
-            });
-            variables.push({
-                name: "Stack Length",
-                evaluateName: "Stack Length",
-                type: "number",
-                value: this._stepData.vmData.stack.length + "",
-                variablesReference: 0
-            });
+        if (args.variablesReference > 0) {
+            // TODO: get children for a variable
+        }
+        else {
+            if (this._stepData !== null) {
+                variables.push({
+                    name: "Contract Address",
+                    evaluateName: "Contract Address",
+                    type: "string",
+                    value: this._stepData.contractAddress,
+                    variablesReference: 0
+                });
+                variables.push({
+                    name: "Contract Name",
+                    evaluateName: "Contract Name",
+                    type: "string",
+                    value: this._contractsByAddress.get(this._stepData.contractAddress)!.name,
+                    variablesReference: 0
+                });
+                variables.push({
+                    name: "Contract Code",
+                    evaluateName: "Contract Code",
+                    type: "string",
+                    value: this._contractsByAddress.get(this._stepData.contractAddress)!.runtimeBytecode,
+                    variablesReference: 0
+                });
+                variables.push({
+                    name: "Program Counter",
+                    evaluateName: "Program Counter",
+                    type: "number",
+                    value: this._stepData.vmData.pc + "",
+                    variablesReference: 0
+                });
+                variables.push({
+                    name: "Next OpCode",
+                    evaluateName: "Next OpCode",
+                    type: "string",
+                    value: this._stepData.vmData.opcode.name,
+                    variablesReference: 0
+                });
+                variables.push({
+                    name: "Stack Length",
+                    evaluateName: "Stack Length",
+                    type: "number",
+                    value: this._stepData.vmData.stack.length + "",
+                    variablesReference: 0
+                });
 
-            const stack = this._stepData.vmData.stack;
-            const memory = this._stepData.vmData.memory;
-            const contract = this._contractsByAddress.get(this._stepData.contractAddress)!;
-            for (let i = 0; i < this._stepData.scope.length; i++) {
-                const scope = this._stepData.scope[i];
-                const scopeVars = contract.scopeVariableMap.get(scope.id)!;
-                const names = scopeVars.keys();
-                for (const name of names) {
-                    const variable = scopeVars.get(name);
-                    if (variable) {
-                        // TODO: more advanced array display
-                        const value = await variable.decode(stack, memory, this._interface, this._stepData.contractAddress);
+                const stack = this._stepData.vmData.stack;
+                const memory = this._stepData.vmData.memory;
+                const contract = this._contractsByAddress.get(this._stepData.contractAddress)!;
+                for (let i = 0; i < this._stepData.scope.length; i++) {
+                    const scope = this._stepData.scope[i];
+                    const scopeVars = contract.scopeVariableMap.get(scope.id)!;
+                    const names = scopeVars.keys();
+                    for (const name of names) {
+                        const variable = scopeVars.get(name);
+                        if (variable) {
+                            // TODO: more advanced array display
+                            const value = await variable.decode(stack, memory, this._interface, this._stepData.contractAddress);
 
-                        variables.push(value);
+                            variables.push(value);
+                        }
                     }
                 }
             }

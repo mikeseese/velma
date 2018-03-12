@@ -197,7 +197,7 @@ export class LibSdbInterface {
                     }
                     break;
                 case "variables":
-                    const variables = await this._runtime.variables();
+                    const variables = await this._runtime.variables(data.content);
                     {
                         const payload = {
                             "id": data.id,
