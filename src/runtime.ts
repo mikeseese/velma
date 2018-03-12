@@ -213,9 +213,6 @@ export class LibSdbRuntime extends EventEmitter {
                 this.processDeclaration(sourceLocation, contract, data.content.stack);
             }
 
-            // find current scope
-            const currentScope = LibSdbUtils.findScope(sourceLocation.start, contract.ast);
-
             const fileId = parseInt(sourceLocation.file);
             let file: LibSdbTypes.File;
             if (!isNaN(fileId)) {
@@ -224,6 +221,9 @@ export class LibSdbRuntime extends EventEmitter {
             else {
                 file = this._files.get(contract.sourcePath)!;
             }
+
+            // find current scope
+            const currentScope = LibSdbUtils.findScope(sourceLocation.start, contract.ast);
 
             let currentLocation = {
                 start: null

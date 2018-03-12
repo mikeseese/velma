@@ -43,8 +43,9 @@ export namespace LibSdbCompile {
                     file.sourceRoot = sourceRootPath;
                     file.relativeDirectory = dirname(relativeSourcePath);
 
-                    if (!file.sourceCode) {
-                        file.sourceCode = readFileSync(absoluteSourcePath, "utf8");
+                    if (!file.sourceCodeOriginal) {
+                        file.sourceCodeOriginal = readFileSync(absoluteSourcePath, "utf8");
+                        file.sourceCode = file.sourceCodeOriginal;
                         file.lineBreaks = LibSdbUtils.SourceMappingDecoder.getLinebreakPositions(file.sourceCode);
                     }
 
@@ -214,7 +215,9 @@ export namespace LibSdbCompile {
     export function linkContractAddress(_contractsByName: LibSdbTypes.ContractMap, _contractsByAddress: LibSdbTypes.ContractMap, name: string, address: string): LibSdbTypes.Contract | null {
         if (_contractsByName.has(name)) {
             const contract = _contractsByName.get(name)!;
-            contract.addresses.push(address.toLowerCase());
+            if (contract.addresses.indexOf(address) === -1) {
+                contract.addresses.push(address.toLowerCase());
+            }
             _contractsByAddress.set(address.toLowerCase(), contract);
             return contract;
         }

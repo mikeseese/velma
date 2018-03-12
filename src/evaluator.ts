@@ -8,6 +8,8 @@ import { LibSdbUtils } from "./utils/utils";
 import { LibSdbCompile } from "./compiler";
 import { LibSdbRuntime } from "./runtime";
 import { CompilerOutput, CompilerInput } from "solc";
+import { readFileSync } from "fs";
+import { join as joinPath } from "path";
 
 /** Parse the error message thrown with a naive compile in order to determine the actual return type. This is the hacky alternative to parsing an AST. */
 const regexpReturnError = /Return argument type (.*) is not implicitly convertible to expected type \(type of first return variable\) bool./
@@ -93,6 +95,42 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
         return expressionFunction;
     }
 
+    public generateCompilerInputSourcesForContract(contract: LibSdbTypes.Contract): CompilerInput["sources"] {
+        let result: CompilerInput["sources"] = {};
+        const file = this._runtime._files.get(contract.sourcePath)!;
+
+        const setImports = (file: LibSdbTypes.File) => {
+            if (file.relativePath() in result) {
+                return;
+            }
+            result[file.relativePath()] = { content: file.sourceCode }; // TODO: use original source?
+
+            const expression = /import[\s]*['"](.*)['"]/g;
+            let match: RegExpExecArray | null;
+            while((match = expression.exec(file.sourceCode)) !== null) { // TODO: use original source?
+                if (match.length > 1) {
+                    const relativeFilePath = match[1];
+                    const absoluteFilePath = joinPath(file.sourceRoot, relativeFilePath);
+                    let nextFile: LibSdbTypes.File;
+                    if (this._runtime._files.has(absoluteFilePath)) {
+                        nextFile = this._runtime._files.get(absoluteFilePath)!;
+                    }
+                    else {
+                        nextFile = new LibSdbTypes.File(file.sourceRoot, relativeFilePath);
+                        nextFile.sourceCodeOriginal = readFileSync(absoluteFilePath, "utf8");
+                        nextFile.sourceCode = nextFile.sourceCodeOriginal;
+                        nextFile.lineBreaks = LibSdbUtils.SourceMappingDecoder.getLinebreakPositions(nextFile.sourceCode);
+                    }
+                    setImports(nextFile);
+                }
+            }
+        };
+
+        setImports(file);
+
+        return result;
+    }
+
     public async evaluate(expression: string, context: string | undefined, frameId: number | undefined, callback): Promise<void> {
         if (this._runtime._stepData === null || expression === undefined || context === undefined) {
             return;
@@ -113,6 +151,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
         let newContract: LibSdbTypes.Contract = contract.clone();
         let file = this._runtime._files.get(contract.sourcePath)!;
         let newFile: LibSdbTypes.File = file.clone();
+        // newFile.sourceCode = newFile.sourceCodeOriginal; // TODO: reset the source to the original source
 
         const functionArgs = this.findArguments(frameId, expression);
         const functionInsert = this.generateFunction(expression, functionArgs);
@@ -217,7 +256,8 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         },
                         sources: {}
                     };
-                    compileInput.sources[newFile.name] = { content: newFile.sourceCode };
+                    compileInput.sources = this.generateCompilerInputSourcesForContract(contract);
+                    compileInput.sources[newFile.relativePath()] = { content: newFile.sourceCode };
                     let result: CompilerOutput = JSON.parse(LibSdbCompile.compile(JSON.stringify(compileInput)));
                     let returnTypeString: string = "bool";
                     if (result.errors !== undefined) {
@@ -231,7 +271,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                                 const repString = `function ` + functionInsert.name + `(` + functionInsert.argsString + `) returns (` + match[1] + `)`;
                                 newFile.sourceCode = newFile.sourceCode.replace(refString, repString);
                                 newFile.lineBreaks = LibSdbUtils.SourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
-                                compileInput.sources[newFile.name] = { content: newFile.sourceCode };
+                                compileInput.sources[newFile.relativePath()] = { content: newFile.sourceCode };
                                 result = JSON.parse(LibSdbCompile.compile(JSON.stringify(compileInput)));
                                 break;
                             }
@@ -264,6 +304,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                     this._runtime._contractsByAddress.set(this._runtime._stepData.contractAddress, newContract);
 
                     LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._filesById, this._runtime._contractsByName, newFile.sourceRoot, result);
+                    LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, newContract.name, this._runtime._stepData.contractAddress);
                     newContract = this._runtime._contractsByAddress.get(this._runtime._stepData.contractAddress)!;
 
                     const astWalker = new LibSdbUtils.AstWalker();

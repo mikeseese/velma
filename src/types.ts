@@ -398,6 +398,7 @@ export namespace LibSdbTypes {
         public lineOffsets: Map<number, number>; // key: line number, value: number of lines
         public ast: Ast;
         public sourceCode: string;
+        public sourceCodeOriginal: string;
         public lineBreaks: number[];
         public sourceId: number | null;
 
@@ -415,6 +416,10 @@ export namespace LibSdbTypes {
 
         public fullPath() {
             return joinPath(this.sourceRoot, this.relativeDirectory, this.name);
+        }
+
+        public relativePath() {
+            return joinPath(this.relativeDirectory, this.name);
         }
 
         clone(): File {
@@ -435,6 +440,8 @@ export namespace LibSdbTypes {
             clone.ast = CircularJSON.parse(CircularJSON.stringify(this.ast));
 
             clone.sourceCode = this.sourceCode;
+
+            clone.sourceCodeOriginal = this.sourceCodeOriginal;
 
             for (let i = 0; i < this.lineBreaks.length; i++) {
                 clone.lineBreaks.push(this.lineBreaks[i]);
