@@ -5,7 +5,8 @@
   "main": "./out/index",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc --baseUrl ."
+    "build": "tsc --baseUrl .",
+    "postinstall": "npm run build"
   },
   "repository": {
     "type": "git",
@@ -26,7 +27,7 @@
     "bn.js": "^4.11.8",
     "circular-json": "^0.4.0",
     "net": "^1.0.2",
-    "solc": "^0.4.18",
+    "solc": "0.4.18",
     "solidity-parser": "git+ssh://git@gitlab.com:seese-ethereum/solidity-parser.git#introduce-sdb",
     "traverse": "^0.6.6",
     "uuid": "^3.1.0",
