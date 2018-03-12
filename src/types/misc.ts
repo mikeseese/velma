@@ -1,5 +1,6 @@
-import { Variable } from "./variable";
+import { Variable } from "./variable/variable";
 import { Contract } from "./contract";
+import { File } from "./file"
 
 export type VariableName = string;
 export type VariableMap = Map<VariableName, Variable>;
