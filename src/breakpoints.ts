@@ -1,4 +1,4 @@
-import { LibSdbTypes } from "./types";
+import { LibSdbTypes } from "./types/types";
 import { LibSdbUtils } from "./utils/utils";
 import { LibSdbRuntime } from "./runtime";
 
