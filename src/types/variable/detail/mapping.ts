@@ -1,15 +1,21 @@
-import { Variable } from "../variable";
+import { Variable, DecodedVariable } from "../variable";
 import { ValueDetail } from "./value";
 import { ArrayDetail } from "./array";
 import { StructDetail } from "./struct";
+import { BN } from "bn.js";
+import { LibSdbInterface } from "../../../interface";
 
 export class MappingDetail {
+    variable: Variable;
+    position: number | null;
+    offset: number | null; // used for storage locations
     id: number;
     key: ValueDetail | ArrayDetail; // cant be dynamic array or contract
     value: ValueDetail | ArrayDetail | StructDetail | MappingDetail
     // Mappings are only allowed for state variables (or as storage reference types in internal functions)
 
-    constructor() {
+    constructor(variable: Variable) {
+        this.variable = variable;
         this.id = Variable.nextId++;
     }
 
@@ -30,12 +36,20 @@ export class MappingDetail {
     }
 
     clone(): MappingDetail {
-        let clone = new MappingDetail();
+        let clone = new MappingDetail(this.variable);
 
         clone.key = this.key.clone();
 
         this.value = this.value.clone();
 
         return clone;
+    }
+
+    async decodeChildren(stack: BN[], memory: (number | null)[], _interface: LibSdbInterface, address: string): Promise<DecodedVariable[]> {
+        return [];
+    }
+
+    async decode(stack: BN[], memory: (number | null)[], _interface: LibSdbInterface, address: string): Promise<DecodedVariable> {
+        return <DecodedVariable> {};
     }
 }

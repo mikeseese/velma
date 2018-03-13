@@ -189,7 +189,7 @@ export namespace LibSdbCompile {
         contract.scopeVariableMap.forEach((variables, scopeId) => {
             const variable = variables.get(node.attributes.name);
             if (variable && variable.scope.depth === depth && variable.functionName === functionName) {
-                position = variable.position;
+                position = variable.detail.position;
             }
         });
 
@@ -202,10 +202,10 @@ export namespace LibSdbCompile {
         variable.scope.id = node.attributes.scope;
         variable.scope.childIndex = childIndex;
         variable.scope.depth = depth;
-        variable.position = position;
+        variable.detail.position = position;
         variable.applyType(node.attributes.stateVariable, node.attributes.storageLocation, parent.name);
-        if (variable.position === null && node.attributes.stateVariable) {
-            variable.position = contract.numStateVariables;
+        if (variable.detail.position === null && node.attributes.stateVariable) {
+            variable.detail.position = contract.numStateVariables;
             contract.numStateVariables++;
         }
 

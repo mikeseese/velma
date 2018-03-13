@@ -90,14 +90,14 @@ export class LibSdbRuntime extends EventEmitter {
                 if (variables) {
                     const variable = variables.get(functionArgument.attributes.name);
                     if (variable) {
-                        variable.position = stack.length + i + (isExternal ? numReturnVariables : -paramListNode.children.length);
+                        variable.detail.position = stack.length + i + (isExternal ? numReturnVariables : -paramListNode.children.length);
                     }
                 }
             }
         }
     }
 
-    private processJumpOut(contract: LibSdbTypes.Contract, stack: any, memory: any) {
+    private async processJumpOut(contract: LibSdbTypes.Contract, stack: any, memory: any): Promise<void> {
         // jump out, we should be at a JUMPDEST currently
 
         if (this._priorStepData) {
@@ -108,9 +108,9 @@ export class LibSdbRuntime extends EventEmitter {
                     // get variable at top of stack
                     // TODO: add support for multiple variable evaluations
 
-                    this._ongoingEvaluation.returnVariable.position = stack.length - 1;
+                    this._ongoingEvaluation.returnVariable.detail.position = stack.length - 1;
 
-                    const returnValue = this._ongoingEvaluation.returnVariable.decode(stack, memory, this._interface, this._ongoingEvaluation.contractAddress);
+                    let returnValue = await this._ongoingEvaluation.returnVariable.detail.decode(stack, memory, this._interface, this._ongoingEvaluation.contractAddress);
                     this._ongoingEvaluation.callback(returnValue);
 
                     this._ongoingEvaluation = null;
@@ -133,15 +133,15 @@ export class LibSdbRuntime extends EventEmitter {
                     for (const name of names) {
                         if (name === variableDeclarationNode.attributes.name) {
                             let variable = variables.get(name)!;
-                            if (variable.position === null) {
+                            if (variable.detail.position === null) {
                                 if (variable.location === LibSdbTypes.VariableLocation.Stack) {
-                                    variable.position = stack.length;
+                                    variable.detail.position = stack.length;
                                 }
                                 else if (variable.location === LibSdbTypes.VariableLocation.Memory) {
-                                    variable.position = stack.length;
+                                    variable.detail.position = stack.length;
                                 }
                                 if (variable.location === LibSdbTypes.VariableLocation.Storage) {
-                                    variable.position = stack.length;
+                                    variable.detail.position = stack.length;
                                 }
                                 break;
                             }
@@ -155,7 +155,7 @@ export class LibSdbRuntime extends EventEmitter {
         }
     }
 
-    public vmStepped(data: any) {
+    public async vmStepped(data: any): Promise<void> {
         this._stepData = null;
         const pc = data.content.pc;
         const address = data.content.address.toString("hex").toLowerCase();
@@ -194,7 +194,7 @@ export class LibSdbRuntime extends EventEmitter {
                         processedJump = true;
                     }
                     else if (this._priorStepData.source.jump === "o") {
-                        this.processJumpOut(contract, data.content.stack, data.content.memory);
+                        await this.processJumpOut(contract, data.content.stack, data.content.memory);
                         processedJump = true;
                     }
                 }
@@ -363,7 +363,7 @@ export class LibSdbRuntime extends EventEmitter {
                         const variable = scopeVars.get(name);
                         if (variable) {
                             // TODO: more advanced array display
-                            const value = await variable.decode(stack, memory, this._interface, this._stepData.contractAddress);
+                            const value = await variable.detail.decode(stack, memory, this._interface, this._stepData.contractAddress);
 
                             variables.push(value);
                         }

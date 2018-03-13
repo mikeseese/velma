@@ -1,11 +1,5 @@
 import { AstScope } from "../astScope";
-import { LibSdbInterface } from "../../interface";
-import { BN } from "bn.js";
 import { DebugProtocol } from "vscode-debugprotocol";
-
-import { decode as decodeStack } from "./decode/stack";
-import { decode as decodeMemory } from "./decode/memory";
-import { decode as decodeStorage } from "./decode/storage";
 
 import { ValueDetail } from "./detail/value";
 import { ArrayDetail } from "./detail/array";
@@ -32,6 +26,29 @@ export enum VariableValueType {
     None
 }
 
+export function VariableValueTypeToString(type: VariableValueType): string {
+    switch (type) {
+        case VariableValueType.Boolean:
+            return "bool";
+        case VariableValueType.UnsignedInteger:
+            return "uint";
+        case VariableValueType.Integer:
+            return "int";
+        case VariableValueType.FixedPoint:
+            return "fixedpoint";
+        case VariableValueType.Address:
+            return "address";
+        case VariableValueType.FixedByteArray:
+            return "bytes";
+        case VariableValueType.Enum:
+            return "enum";
+        case VariableValueType.Function:
+            return "function";
+        default:
+            return "";
+    }
+}
+
 export enum VariableRefType {
     Array,
     Struct,
@@ -50,7 +67,6 @@ export class Variable {
     originalType: string;
     detail: ValueDetail | ArrayDetail | StructDetail | MappingDetail;
     scope: AstScope;
-    position: number | null;
     location: VariableLocation;
 
     public static nextId: number = 1;
@@ -83,8 +99,6 @@ export class Variable {
 
         clone.scope = this.scope.clone();
 
-        clone.position = this.position;
-
         return clone;
     }
 
@@ -99,69 +113,6 @@ export class Variable {
         else {
             return this.id;
         }
-    }
-
-    async decodeChildren(stack: BN[], memory: (number | null)[], _interface: LibSdbInterface, address: string): Promise<DecodedVariable[]> {
-        let decodedVariables: DecodedVariable[] = [];
-
-        if (!(this.detail instanceof ValueDetail)) {
-            let v: string = "";
-
-            switch (this.location) {
-                case VariableLocation.Stack:
-                    v = decodeStack(this, stack);
-                    break;
-                case VariableLocation.Memory:
-                    v = decodeMemory(this, stack, memory);
-                    break;
-                case VariableLocation.Storage:
-                    v = await decodeStorage(this, _interface, address);
-                    break;
-                default:
-                    break;
-            }
-
-            const decodedVariable = <DecodedVariable> {
-                name: this.name,
-                evaluateName: this.name,
-                type: this.typeToString(),
-                variablesReference: this.variableReference(),
-                value: v,
-                result: v
-            };
-        }
-
-        return decodedVariables;
-    }
-
-    async decode(stack: BN[], memory: (number | null)[], _interface: LibSdbInterface, address: string): Promise<DecodedVariable> {
-        let v: string = "";
-
-        if (this.detail instanceof ValueDetail) {
-            switch (this.location) {
-                case VariableLocation.Stack:
-                    v = decodeStack(this, stack);
-                    break;
-                case VariableLocation.Memory:
-                    v = decodeMemory(this, stack, memory);
-                    break;
-                case VariableLocation.Storage:
-                    v = await decodeStorage(this, _interface, address);
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        let decodedVariable = <DecodedVariable> {
-            name: this.name,
-            evaluateName: this.name,
-            type: this.typeToString(),
-            variablesReference: this.variableReference(),
-            value: v,
-            result: v
-        };
-        return decodedVariable;
     }
 
     applyType(stateVariable: boolean, storageLocation: string, parentName: string): void {

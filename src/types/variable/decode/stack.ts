@@ -1,12 +1,11 @@
-import { Variable } from "../variable";
-import { ValueDetail } from "../detail/value";
+import { VariableValueType } from "../variable";
 import { decode as decodeValue } from "./value";
 import { BN } from "bn.js";
 
-export function decode(variable: Variable, stack: BN[]): string {
-    if (variable.position !== null && variable.position >= 0 && variable.position < stack.length && variable.detail instanceof ValueDetail) {
+export function decode(position: number, type: VariableValueType, stack: BN[]): string {
+    if (position !== null && position >= 0 && position < stack.length) {
         // stack
-        return decodeValue(variable.detail.type, stack[variable.position]);
+        return decodeValue(type, stack[position]);
     }
     else {
         return "";

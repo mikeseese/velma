@@ -317,7 +317,7 @@ export class LibSdbInterface {
                 this.respondToDebugHook("stopOnBreakpoint", data.id);
             }
             else if (triggerType === "step" || triggerType === "exception") {
-                this._runtime.vmStepped(data);
+                await this._runtime.vmStepped(data);
             }
         }
         else if (messageType === "response") {

@@ -1,6 +1,5 @@
-import { LibSdbTypes } from "../types";
+import { LibSdbTypes } from "../types/types";
 import { AstWalker } from "./astWalker";
-import { BN } from "bn.js";
 
 // bytecode is a hex string of the bytecode without the preceding '0x'
 // methodId is the SHA3 hash of the ABI for this function
