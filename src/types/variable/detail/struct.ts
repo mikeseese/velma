@@ -1,4 +1,4 @@
-import { Variable, DecodedVariable } from "../variable";
+import { Variable, DecodedVariable, VariableLocation } from "../variable";
 import { ValueDetail } from "./value";
 import { ArrayDetail } from "./array";
 import { MappingDetail } from "./mapping";
@@ -7,7 +7,9 @@ import { LibSdbInterface } from "../../../interface";
 
 export class StructDetail {
     variable: Variable;
-    position: number | null;
+    position: number;
+    location: VariableLocation;
+    isPointer: boolean; // pointer vs reference (used for storage locations)
     offset: number | null; // used for storage locations
     id: number;
     name: string;

@@ -1,4 +1,4 @@
-import { Variable, DecodedVariable } from "../variable";
+import { Variable, DecodedVariable, VariableLocation } from "../variable";
 import { ValueDetail } from "./value";
 import { StructDetail } from "./struct";
 import { MappingDetail } from "./mapping";
@@ -7,11 +7,15 @@ import { LibSdbInterface } from "../../../interface";
 
 export class ArrayDetail {
     variable: Variable;
-    position: number | null;
+    location: VariableLocation;
+    isPointer: boolean; // pointer vs reference (used for storage locations)
+    position: number;
     offset: number | null; // used for storage locations
     id: number;
     isDynamic: boolean;
-    members: (ValueDetail | ArrayDetail | StructDetail | MappingDetail)[];
+    memberType: ValueDetail | ArrayDetail | StructDetail | MappingDetail;
+    length: number;
+    members: (ArrayDetail["memberType"])[];
     // From spec: For memory arrays, it cannot be a mapping and has to be an ABI
     //   type if it is an argument of a publicly-visible function.
 

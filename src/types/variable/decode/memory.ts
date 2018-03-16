@@ -1,8 +1,8 @@
-import { VariableValueType } from "../variable";
+import { VariableType } from "../variable";
 import { decode as decodeValue } from "./value";
 import { BN } from "bn.js";
 
-export function decode(position: number, type: VariableValueType, stack: BN[], memory: (number | null)[]): string {
+export function decode(position: number, type: VariableType, stack: BN[], memory: (number | null)[]): string {
     let v = "";
 
     if (position !== null && stack.length > position) {

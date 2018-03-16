@@ -1,9 +1,9 @@
 import { LibSdbInterface } from "../../../interface";
-import { VariableValueType } from "../variable";
+import { VariableType } from "../variable";
 import { decode as decodeValue } from "./value";
 import { BN } from "bn.js";
 
-export async function decode(position: number, offset: number, length: number, type: VariableValueType, _interface: LibSdbInterface, address: string): Promise<string> {
+export async function decode(position: number, offset: number, length: number, type: VariableType, _interface: LibSdbInterface, address: string): Promise<string> {
     let value = "";
 
     if (position === null) {

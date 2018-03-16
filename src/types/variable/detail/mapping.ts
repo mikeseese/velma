@@ -7,7 +7,7 @@ import { LibSdbInterface } from "../../../interface";
 
 export class MappingDetail {
     variable: Variable;
-    position: number | null;
+    position: number;
     offset: number | null; // used for storage locations
     id: number;
     key: ValueDetail | ArrayDetail; // cant be dynamic array or contract

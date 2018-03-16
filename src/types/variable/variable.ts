@@ -11,10 +11,11 @@ import { applyType } from "./applyType";
 export enum VariableLocation {
     Stack,
     Memory,
-    Storage
+    Storage,
+    CallData
 }
 
-export enum VariableValueType {
+export enum VariableType {
     Boolean,
     UnsignedInteger,
     Integer,
@@ -23,26 +24,31 @@ export enum VariableValueType {
     FixedByteArray,
     Enum,
     Function,
+    Struct,
+    Mapping,
+    ByteArray,
+    Contract,
+    String,
     None
 }
 
-export function VariableValueTypeToString(type: VariableValueType): string {
+export function VariableTypeToString(type: VariableType): string {
     switch (type) {
-        case VariableValueType.Boolean:
+        case VariableType.Boolean:
             return "bool";
-        case VariableValueType.UnsignedInteger:
+        case VariableType.UnsignedInteger:
             return "uint";
-        case VariableValueType.Integer:
+        case VariableType.Integer:
             return "int";
-        case VariableValueType.FixedPoint:
+        case VariableType.FixedPoint:
             return "fixedpoint";
-        case VariableValueType.Address:
+        case VariableType.Address:
             return "address";
-        case VariableValueType.FixedByteArray:
+        case VariableType.FixedByteArray:
             return "bytes";
-        case VariableValueType.Enum:
+        case VariableType.Enum:
             return "enum";
-        case VariableValueType.Function:
+        case VariableType.Function:
             return "function";
         default:
             return "";
@@ -63,6 +69,7 @@ export interface DecodedVariable extends DebugProtocol.Variable {
 export class Variable {
     id: number;
     name: string;
+    position: number | null;
     functionName: string | null;
     originalType: string;
     detail: ValueDetail | ArrayDetail | StructDetail | MappingDetail;

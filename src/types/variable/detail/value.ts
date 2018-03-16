@@ -1,4 +1,4 @@
-import { Variable, VariableValueType, DecodedVariable, VariableLocation, VariableValueTypeToString } from "../variable";
+import { Variable, VariableType, DecodedVariable, VariableLocation, VariableTypeToString } from "../variable";
 import { LibSdbInterface } from "../../../interface";
 import { BN } from "bn.js";
 
@@ -8,9 +8,9 @@ import { decode as decodeStorage } from "../decode/storage";
 
 export class ValueDetail {
     variable: Variable;
-    position: number | null;
+    position: number;
     offset: number | null; // used for storage locations
-    type: VariableValueType;
+    type: VariableType;
     storageLength: number;
 
     constructor(variable: Variable) {
@@ -29,25 +29,23 @@ export class ValueDetail {
     async decode(stack: BN[], memory: (number | null)[], _interface: LibSdbInterface, address: string): Promise<DecodedVariable> {
         let v: string = "";
 
-        if (this.position) {
-            switch (this.variable.location) {
-                case VariableLocation.Stack:
-                    v = decodeStack(this.position, this.type, stack);
-                    break;
-                case VariableLocation.Memory:
-                    v = decodeMemory(this.position, this.type, stack, memory);
-                    break;
-                case VariableLocation.Storage:
-                    v = await decodeStorage(this.position, this.offset || 0, this.storageLength, this.type, _interface, address);
-                    break;
-                default:
-                    break;
-            }
+        switch (this.variable.location) {
+            case VariableLocation.Stack:
+                v = decodeStack(this.position, this.type, stack);
+                break;
+            case VariableLocation.Memory:
+                v = decodeMemory(this.position, this.type, stack, memory);
+                break;
+            case VariableLocation.Storage:
+                v = await decodeStorage(this.position, this.offset || 0, this.storageLength, this.type, _interface, address);
+                break;
+            default:
+                break;
         }
 
         let decodedVariable = <DecodedVariable>{
             name: "(unknown name)",
-            type: VariableValueTypeToString(this.type),
+            type: VariableTypeToString(this.type),
             variablesReference: 0,
             value: v,
             result: v

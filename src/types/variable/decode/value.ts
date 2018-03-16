@@ -1,26 +1,26 @@
-import { VariableValueType } from "../variable";
+import { VariableType } from "../variable";
 import { BN } from "bn.js";
 
-export function decode(variableType: VariableValueType, value: BN) {
+export function decode(variableType: VariableType, value: BN) {
     let v: string = "";
     //let num;
     switch (variableType) {
-        case VariableValueType.Boolean:
+        case VariableType.Boolean:
             v = value.eqn(1) ? "true" : "false";
             break;
-        case VariableValueType.UnsignedInteger:
+        case VariableType.UnsignedInteger:
             v = value.toString();
             break;
-        case VariableValueType.Integer:
+        case VariableType.Integer:
             v = value.fromTwos(256).toString();
             break;
-        case VariableValueType.FixedPoint:
+        case VariableType.FixedPoint:
             // not supported yet in Solidity (2/21/2018) per solidity.readthedocs.io
             break;
-        case VariableValueType.Address:
+        case VariableType.Address:
             v = value.toString(16);
             break;
-        case VariableValueType.FixedByteArray:
+        case VariableType.FixedByteArray:
             const byteArrayStr = value.toString(16).match(/.{2}/g);
             let byteArray: number[];
             if (byteArrayStr !== null) {
@@ -33,13 +33,13 @@ export function decode(variableType: VariableValueType, value: BN) {
             }
             v = JSON.stringify(byteArray);
             break;
-        case VariableValueType.Enum:
+        case VariableType.Enum:
             // TODO:
             break;
-        case VariableValueType.Function:
+        case VariableType.Function:
             // TODO:
             break;
-        case VariableValueType.None:
+        case VariableType.None:
         default:
             v = "";
             break;
