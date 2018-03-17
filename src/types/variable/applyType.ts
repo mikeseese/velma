@@ -61,6 +61,8 @@ export function processDetails(variable: Variable, typeName: string): ValueDetai
         leaf = new ValueDetail(variable);
         leaf.type = VariableType.Boolean;
         leaf.storageLength = 32;
+
+        // TODO: offset, position
     }
     else if ((match = /^uint/g.exec(typeName)) !== null) {
         // last leaf is an uint
@@ -76,6 +78,8 @@ export function processDetails(variable: Variable, typeName: string): ValueDetai
         else {
             leaf.storageLength = 32;
         }
+
+        // TODO: offset, position
     }
     else if ((match = /^int/g.exec(typeName)) !== null) {
         // last leaf is an int
@@ -91,44 +95,94 @@ export function processDetails(variable: Variable, typeName: string): ValueDetai
         else {
             leaf.storageLength = 32;
         }
+
+        // TODO: offset, position
     }
     else if ((match = /^address/g.exec(typeName)) !== null) {
         // last leaf is an address
         leaf = new ValueDetail(variable);
         leaf.type = VariableType.Address;
+        leaf.storageLength = 20; // TODO: ?
+
+        // TODO: offset, position
     }
-    else if ((match = /^(bytes)(([1-9]|[12][0-9]|3[0-2])\b)/g.exec(typeName)) !== null) {
+    else if ((match = /^(bytes)([1-9]|[12][0-9]|3[0-2])\b/g.exec(typeName)) !== null) {
         // last leaf is a fixed byte array
         // group 1 is the number of bytes
         leaf = new ValueDetail(variable);
         leaf.type = VariableType.FixedByteArray;
+        leaf.storageLength = parseInt(match[2]) || 32;
+
+        // TODO: offset, position
     }
     else if ((match = /^bytes/g.exec(typeName)) !== null) {
         // last leaf is a dynamic bytes array (special array)
         leaf = new ArrayDetail(variable);
 
-        // TODO: modifiers:
-        // storage pointer|ref
-        // memory
-        // calldata
+        const index = match.index + match[0].length;
+        const remainder = typeName.substr(index);
+        const locationMatch = /^(storage (pointer|ref)|memory|calldata)/g.exec(remainder);
+        if (locationMatch !== null) {
+            const locationString = locationMatch[1].trim();
+            switch (locationString) {
+                case "storage":
+                    leaf.location = VariableLocation.Storage;
+                    leaf.isPointer = locationMatch[2] === "pointer";
+                    break;
+                case "memory":
+                    leaf.location = VariableLocation.Memory;
+                    break;
+                case "calldata":
+                    leaf.location = VariableLocation.CallData;
+                    break;
+            }
+        }
     }
     else if ((match = /^string/g.exec(typeName)) !== null) {
         // last leaf is a string (special array)
         leaf = new ArrayDetail(variable);
 
-        // TODO: modifiers:
-        // storage pointer|ref
-        // memory
-        // calldata
+        const index = match.index + match[0].length;
+        const remainder = typeName.substr(index);
+        const locationMatch = /^(storage (pointer|ref)|memory|calldata)/g.exec(remainder);
+        if (locationMatch !== null) {
+            const locationString = locationMatch[1].trim();
+            switch (locationString) {
+                case "storage":
+                    leaf.location = VariableLocation.Storage;
+                    leaf.isPointer = locationMatch[2] === "pointer";
+                    break;
+                case "memory":
+                    leaf.location = VariableLocation.Memory;
+                    break;
+                case "calldata":
+                    leaf.location = VariableLocation.CallData;
+                    break;
+            }
+        }
     }
     else if ((match = /^struct ([\S]+)\.([\S])+/g.exec(typeName)) !== null) {
         // group 1 is the namespace/contract, group 2 is the name of the struct type
         leaf = new StructDetail(variable);
 
-        // TODO: modifiers:
-        // storage pointer|ref
-        // memory
-        // calldata
+        const index = match.index + match[0].length;
+        const remainder = typeName.substr(index);
+        const locationMatch = /^(storage (pointer|ref)|memory|calldata)/g.exec(remainder);
+        if (locationMatch !== null) {
+            const locationString = locationMatch[1].trim();
+            switch (locationString) {
+                case "storage":
+                    leaf.location = VariableLocation.Storage;
+                    leaf.isPointer = locationMatch[2] === "pointer";
+                    break;
+                case "memory":
+                    leaf.location = VariableLocation.Memory;
+                    break;
+                case "calldata":
+                    leaf.location = VariableLocation.CallData;
+                    break;
+            }
+        }
     }
     else if ((match = /^mapping\((.*?(?=(?: => )|$)) => (.*)\)/g.exec(typeName)) !== null) {
         // group 1 is the key, group 2 is the value
@@ -147,8 +201,8 @@ export function processDetails(variable: Variable, typeName: string): ValueDetai
         // unsupported leaf?
     }
 
-    // awesome, we got the last leaf hopefully, lets check if we have an array of this stuff
     if (match !== null) {
+        // awesome, we got the last leaf hopefully, lets check if we have an array of this stuff
         let arrays: ArrayDetail[] = [];
         let arrayMatch: RegExpExecArray | null = null;
 
@@ -163,10 +217,27 @@ export function processDetails(variable: Variable, typeName: string): ValueDetai
                 array.isDynamic = arrayMatch[1].length === 0;
                 array.length = parseInt(arrayMatch[1]) || 0;
 
-                // TODO: modifiers:
-                // storage pointer|ref
-                // memory
-                // calldata
+                const index2 = match.index + match[0].length;
+                const remainder = typeName.substr(index2);
+                const locationMatch = /^(storage (pointer|ref)|memory|calldata)/g.exec(remainder);
+                if (locationMatch !== null) {
+                    const locationString = locationMatch[1].trim();
+                    switch (locationString) {
+                        case "storage": {
+                            array.location = VariableLocation.Storage;
+                            array.isPointer = locationMatch[2] === "pointer";
+                            break;
+                        }
+                        case "memory": {
+                            array.location = VariableLocation.Memory;
+                            break;
+                        }
+                        case "calldata": {
+                            array.location = VariableLocation.CallData;
+                            break;
+                        }
+                    }
+                }
 
                 // so it's possible we have more arrays, set the next index, and try again
                 index = arrayMatch.index + arrayMatch[0].length;
