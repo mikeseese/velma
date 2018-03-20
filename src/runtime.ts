@@ -6,6 +6,7 @@ import { LibSdbUtils } from "./utils/utils";
 import { LibSdbInterface } from "./interface";
 import { LibSdbBreakpoints } from "./breakpoints";
 import { LibSdbEvaluator } from "./evaluator";
+import { ValueDetail } from "./types/barrel";
 
 const CircularJSON = require("circular-json");
 
@@ -26,6 +27,8 @@ export class LibSdbRuntime extends EventEmitter {
     public _contractsByName: LibSdbTypes.ContractMap;
     public _contractsByAddress: LibSdbTypes.ContractMap;
 
+    public _variableReferenceIds: LibSdbTypes.VariableReferenceMap;
+
     public _interface: LibSdbInterface;
     public _breakpoints: LibSdbBreakpoints;
     public _evaluator: LibSdbEvaluator;
@@ -41,6 +44,8 @@ export class LibSdbRuntime extends EventEmitter {
         this._filesById = new Map<number, LibSdbTypes.File>();
         this._contractsByName = new Map<string, LibSdbTypes.Contract>();
         this._contractsByAddress = new Map<string, LibSdbTypes.Contract>();
+
+        this._variableReferenceIds = new Map<number, LibSdbTypes.ValueDetail | LibSdbTypes.ArrayDetail | LibSdbTypes.StructDetail | LibSdbTypes.MappingDetail>();
 
         this._stepData = null;
         this._priorStepData = null;
@@ -304,11 +309,21 @@ export class LibSdbRuntime extends EventEmitter {
     public async variables(args: DebugProtocol.VariablesArguments): Promise<any[]> {
         let variables: any[] = [];
 
-        if (args.variablesReference > 0) {
-            // TODO: get children for a variable
-        }
-        else {
-            if (this._stepData !== null) {
+        if (this._stepData !== null) {
+            const stack = this._stepData.vmData.stack;
+            const memory = this._stepData.vmData.memory;
+            const contract = this._contractsByAddress.get(this._stepData.contractAddress)!;
+
+            if (args.variablesReference > 0 && args.variablesReference < 1000) {
+                // TODO: get children for a variable
+                if (this._variableReferenceIds.has(args.variablesReference)) {
+                    const detail = this._variableReferenceIds.get(args.variablesReference)!;
+                    if (!(detail instanceof ValueDetail)) {
+                        variables = await detail.decodeChildren(stack, memory, this._interface, this._stepData.contractAddress);
+                    }
+                }
+            }
+            else {
                 variables.push({
                     name: "Contract Address",
                     evaluateName: "Contract Address",
@@ -352,9 +367,6 @@ export class LibSdbRuntime extends EventEmitter {
                     variablesReference: 0
                 });
 
-                const stack = this._stepData.vmData.stack;
-                const memory = this._stepData.vmData.memory;
-                const contract = this._contractsByAddress.get(this._stepData.contractAddress)!;
                 for (let i = 0; i < this._stepData.scope.length; i++) {
                     const scope = this._stepData.scope[i];
                     const scopeVars = contract.scopeVariableMap.get(scope.id)!;
@@ -362,7 +374,6 @@ export class LibSdbRuntime extends EventEmitter {
                     for (const name of names) {
                         const variable = scopeVars.get(name);
                         if (variable) {
-                            // TODO: more advanced array display
                             const value = await variable.detail.decode(stack, memory, this._interface, this._stepData.contractAddress);
 
                             variables.push(value);

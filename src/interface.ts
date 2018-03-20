@@ -304,7 +304,7 @@ export class LibSdbInterface {
             });
 
             if (triggerType === "linkCompilerOutput") {
-                LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._filesById, this._runtime._contractsByName, data.content.sourceRootPath, data.content.compilationResult);
+                LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._filesById, this._runtime._variableReferenceIds, this._runtime._contractsByName, data.content.sourceRootPath, data.content.compilationResult);
                 this.respondToDebugHook("stopOnBreakpoint", data.id);
             }
             else if (triggerType === "linkContractAddress") {

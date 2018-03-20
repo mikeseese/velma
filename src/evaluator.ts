@@ -303,7 +303,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                     this._runtime._files.set(newFile.fullPath(), newFile);
                     this._runtime._contractsByAddress.set(this._runtime._stepData.contractAddress, newContract);
 
-                    LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._filesById, this._runtime._contractsByName, newFile.sourceRoot, result);
+                    LibSdbCompile.linkCompilerOutput(this._runtime._files, this._runtime._filesById, this._runtime._variableReferenceIds, this._runtime._contractsByName, newFile.sourceRoot, result);
                     LibSdbCompile.linkContractAddress(this._runtime._contractsByName, this._runtime._contractsByAddress, newContract.name, this._runtime._stepData.contractAddress);
                     newContract = this._runtime._contractsByAddress.get(this._runtime._stepData.contractAddress)!;
 
@@ -365,7 +365,8 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         this._runtime._ongoingEvaluation.functionName = functionInsert.name;
                         this._runtime._ongoingEvaluation.callback = callback;
                         this._runtime._ongoingEvaluation.returnVariable.originalType = returnTypeString;
-                        this._runtime._ongoingEvaluation.returnVariable.applyType(false, "default", "ParameterList");
+                        // TODO: potential error with runtime variable reference map!!! create new one?
+                        this._runtime._ongoingEvaluation.returnVariable.applyType(false, "default", "ParameterList", this._runtime._variableReferenceIds);
                         this._runtime._ongoingEvaluation.contractAddress = this._runtime._stepData.contractAddress;
 
                         // push the code

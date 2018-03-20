@@ -8,3 +8,7 @@ export * from "./misc";
 export * from "./stackFrame";
 export * from "./stepData";
 export * from "./variable/variable";
+export * from "./variable/detail/value";
+export * from "./variable/detail/array";
+export * from "./variable/detail/struct";
+export * from "./variable/detail/mapping";

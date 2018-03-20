@@ -8,7 +8,7 @@ import { LibSdbUtils } from "./utils/utils";
 export namespace LibSdbCompile {
     export const compile = solcCompile;
 
-    export function linkCompilerOutput(_files: LibSdbTypes.FileMap, _filesById: LibSdbTypes.FileByIdMap, _contractsByName: LibSdbTypes.ContractMap, sourceRootPath: string, compilationResult: CompilerOutput): boolean {
+    export function linkCompilerOutput(_files: LibSdbTypes.FileMap, _filesById: LibSdbTypes.FileByIdMap, _variableReferenceIds: LibSdbTypes.VariableReferenceMap, _contractsByName: LibSdbTypes.ContractMap, sourceRootPath: string, compilationResult: CompilerOutput): boolean {
         if (compilationResult.sources === undefined) {
             // cant do anything if we don't get the right data, this is invalid
             return false;
@@ -133,7 +133,7 @@ export namespace LibSdbCompile {
                                             newScopeVariableMap.set(node.id, new Map<string, LibSdbTypes.Variable>());
     
                                             if (node.name === "VariableDeclaration") {
-                                                const variable = createVariableFromAst(node, parent, depth, functionName, contract);
+                                                const variable = createVariableFromAst(node, parent, depth, functionName, contract, _variableReferenceIds);
                                                 // add the variable to the parent's scope
                                                 newScopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
                                             }
@@ -147,7 +147,7 @@ export namespace LibSdbCompile {
                                 }
                                 else if (node.name === "VariableDeclaration") {
                                     // this is outside of a function (i.e. state variables)
-                                    const variable = createVariableFromAst(node, parent, depth, null, contract);
+                                    const variable = createVariableFromAst(node, parent, depth, null, contract, _variableReferenceIds);
                                     // add the variable to the parent's scope
                                     newScopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
                                 }
@@ -173,7 +173,7 @@ export namespace LibSdbCompile {
         return true;
     }
 
-    function createVariableFromAst(node: any, parent: any, depth: number, functionName: string | null, contract: LibSdbTypes.Contract): LibSdbTypes.Variable {
+    function createVariableFromAst(node: any, parent: any, depth: number, functionName: string | null, contract: LibSdbTypes.Contract, _variableReferenceIds: LibSdbTypes.VariableReferenceMap): LibSdbTypes.Variable {
         let childIndex: number | null = null;
         if (parent) {
             // look for the child in the parent to get the index
@@ -203,7 +203,7 @@ export namespace LibSdbCompile {
         variable.scope.childIndex = childIndex;
         variable.scope.depth = depth;
         variable.position = position;
-        variable.applyType(node.attributes.stateVariable, node.attributes.storageLocation, parent.name);
+        variable.applyType(node.attributes.stateVariable, node.attributes.storageLocation, parent.name, _variableReferenceIds);
         if (variable.position === null && node.attributes.stateVariable) {
             variable.position = contract.numStateVariables;
             contract.numStateVariables++;

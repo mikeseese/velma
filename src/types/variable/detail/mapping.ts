@@ -7,11 +7,12 @@ import { LibSdbInterface } from "../../../interface";
 
 export class MappingDetail {
     variable: Variable;
-    position: number;
+    position: number; // either the slot number or absolute position in stack/memory (starts off as relative until we know where the variable posisiton is)
     offset: number | null; // used for storage locations
     id: number;
     key: ValueDetail | ArrayDetail; // cant be dynamic array or contract
     value: ValueDetail | ArrayDetail | StructDetail | MappingDetail
+    memoryLength: number;
     // Mappings are only allowed for state variables (or as storage reference types in internal functions)
 
     constructor(variable: Variable) {

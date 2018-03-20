@@ -7,7 +7,7 @@ import { LibSdbInterface } from "../../../interface";
 
 export class StructDetail {
     variable: Variable;
-    position: number;
+    position: number; // either the slot number or absolute position in stack/memory (starts off as relative until we know where the variable posisiton is)
     location: VariableLocation;
     isPointer: boolean; // pointer vs reference (used for storage locations)
     offset: number | null; // used for storage locations
@@ -17,6 +17,7 @@ export class StructDetail {
         name: string;
         type: (ValueDetail | ArrayDetail | StructDetail | MappingDetail)
     }[];
+    memoryLength: number;
 
     constructor(variable: Variable) {
         this.variable = variable;
@@ -67,7 +68,7 @@ export class StructDetail {
 
     async decode(stack: BN[], memory: (number | null)[], _interface: LibSdbInterface, address: string): Promise<DecodedVariable> {
         let decodedVariable = <DecodedVariable>{
-            name: "(unknown name)",
+            name: this.variable.name,
             type: this.name,
             variablesReference: this.id,
             value: "",

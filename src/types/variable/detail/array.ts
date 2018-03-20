@@ -9,19 +9,21 @@ export class ArrayDetail {
     variable: Variable;
     location: VariableLocation;
     isPointer: boolean; // pointer vs reference (used for storage locations)
-    position: number;
+    position: number; // either the slot number or absolute position in stack/memory (starts off as relative until we know where the variable posisiton is)
     offset: number | null; // used for storage locations
     id: number;
     isDynamic: boolean;
     memberType: ValueDetail | ArrayDetail | StructDetail | MappingDetail;
     length: number;
     members: (ArrayDetail["memberType"])[];
+    memoryLength: number;
     // From spec: For memory arrays, it cannot be a mapping and has to be an ABI
     //   type if it is an argument of a publicly-visible function.
 
     constructor(variable: Variable) {
         this.variable = variable;
         this.id = Variable.nextId++;
+        this.members = [];
     }
 
     childIds(): number[] {
@@ -72,10 +74,10 @@ export class ArrayDetail {
 
     async decode(stack: BN[], memory: (number | null)[], _interface: LibSdbInterface, address: string): Promise<DecodedVariable> {
         let decodedVariable = <DecodedVariable> {
-            name: "(unknown name)",
+            name: this.variable.name,
             type: "array",
             variablesReference: this.id,
-            value: "",
+            value: "Array(" + this.length + ")",
             result: ""
         };
 

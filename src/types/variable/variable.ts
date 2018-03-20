@@ -1,12 +1,8 @@
 import { AstScope } from "../astScope";
 import { DebugProtocol } from "vscode-debugprotocol";
 
-import { ValueDetail } from "./detail/value";
-import { ArrayDetail } from "./detail/array";
-import { StructDetail } from "./detail/struct";
-import { MappingDetail } from "./detail/mapping";
-
 import { applyType } from "./applyType";
+import { LibSdbTypes } from "../types";
 
 export enum VariableLocation {
     Stack,
@@ -66,13 +62,15 @@ export interface DecodedVariable extends DebugProtocol.Variable {
     result: string; // same as value
 }
 
+export type VariableReferenceMap = Map<number, LibSdbTypes.ValueDetail | LibSdbTypes.ArrayDetail | LibSdbTypes.StructDetail | LibSdbTypes.MappingDetail>;
+
 export class Variable {
     id: number;
     name: string;
-    position: number | null;
+    position: number | null; // position in stack to value or pointer
     functionName: string | null;
     originalType: string;
-    detail: ValueDetail | ArrayDetail | StructDetail | MappingDetail;
+    detail: LibSdbTypes.ValueDetail | LibSdbTypes.ArrayDetail | LibSdbTypes.StructDetail | LibSdbTypes.MappingDetail;
     scope: AstScope;
     location: VariableLocation;
 
@@ -85,7 +83,7 @@ export class Variable {
     childIds(): number[] {
         let ids: number[] = [];
 
-        if (!(this.detail instanceof ValueDetail)) {
+        if (!(this.detail instanceof LibSdbTypes.ValueDetail)) {
             ids.push(this.detail.id);
             ids = ids.concat(this.detail.childIds());
         }
@@ -114,7 +112,7 @@ export class Variable {
     }
 
     variableReference(): number {
-        if (this.detail instanceof ValueDetail) {
+        if (this.detail instanceof LibSdbTypes.ValueDetail) {
             return 0;
         }
         else {
@@ -122,7 +120,7 @@ export class Variable {
         }
     }
 
-    applyType(stateVariable: boolean, storageLocation: string, parentName: string): void {
-        applyType(this, stateVariable, storageLocation, parentName);
+    applyType(stateVariable: boolean, storageLocation: string, parentName: string, _variableReferenceIds: LibSdbTypes.VariableReferenceMap): void {
+        applyType(this, stateVariable, storageLocation, parentName, _variableReferenceIds);
     }
 }
