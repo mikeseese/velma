@@ -14,16 +14,18 @@ export class Contract {
     runtimeBytecode: string;
     srcmapRuntime: string;
     ast: Ast;
-    numStateVariables: number;
+    stateVariables: Variable[];
     breakpoints: Map<number, number>;
+    structDefinitions: Map<string, number>;
 
     constructor() {
         this.pcMap = new Map<number, number>();
         this.scopeVariableMap = new Map<number, VariableMap>();
         this.functionNames = new Map<number, string>();
-        this.numStateVariables = 0;
+        this.stateVariables = [];
         this.addresses = [];
         this.breakpoints = new Map<number, number>();
+        this.structDefinitions = new Map<string, number>();
     }
 
     clone(): Contract {
@@ -59,7 +61,13 @@ export class Contract {
 
         clone.ast = CircularJSON.parse(CircularJSON.stringify(this.ast));
 
-        clone.numStateVariables = this.numStateVariables;
+        for (let i = 0; i < this.stateVariables.length; i++) {
+            clone.stateVariables.push(this.stateVariables[i]);
+        }
+
+        for (const v of this.structDefinitions) {
+            clone.structDefinitions.set(v[0], v[1]);
+        }
 
         return clone;
     }

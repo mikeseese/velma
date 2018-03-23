@@ -122,7 +122,7 @@ export function processDetails(variable: Variable, typeName: string, _variableRe
         // A `bytes` is similar to `byte[]`, but it is packed tightly in calldata.
         const index = match.index + match[0].length;
         const remainder = typeName.substr(index);
-        const locationMatch = /^(storage (pointer|ref)|memory|calldata)/g.exec(remainder);
+        const locationMatch = /^ (storage|memory|calldata) ?(pointer|ref)?/g.exec(remainder);
         if (locationMatch !== null) {
             const locationString = locationMatch[1].trim();
             switch (locationString) {
@@ -151,7 +151,7 @@ export function processDetails(variable: Variable, typeName: string, _variableRe
         // `string` is equal to `bytes` but does not allow length or index access (for now).
         const index = match.index + match[0].length;
         const remainder = typeName.substr(index);
-        const locationMatch = /^(storage (pointer|ref)|memory|calldata)/g.exec(remainder);
+        const locationMatch = /^ (storage|memory|calldata) ?(pointer|ref)?/g.exec(remainder);
         if (locationMatch !== null) {
             const locationString = locationMatch[1].trim();
             switch (locationString) {
@@ -179,7 +179,7 @@ export function processDetails(variable: Variable, typeName: string, _variableRe
 
         const index = match.index + match[0].length;
         const remainder = typeName.substr(index);
-        const locationMatch = /^(storage (pointer|ref)|memory|calldata)/g.exec(remainder);
+        const locationMatch = /^ (storage|memory|calldata) ?(pointer|ref)?/g.exec(remainder);
         if (locationMatch !== null) {
             const locationString = locationMatch[1].trim();
             switch (locationString) {
@@ -198,6 +198,8 @@ export function processDetails(variable: Variable, typeName: string, _variableRe
         }
 
         // TODO: process members by finding struct definition
+        const structContractName = match[1];
+        const structName = match[2];
     }
     else if ((match = /^mapping\((.*?(?=(?: => )|$)) => (.*)\)/g.exec(typeName)) !== null) {
         // group 1 is the key, group 2 is the value

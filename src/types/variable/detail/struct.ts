@@ -71,7 +71,7 @@ export class StructDetail {
             name: this.variable.name,
             type: this.name,
             variablesReference: this.id,
-            value: "",
+            value: "Struct",
             result: ""
         };
 

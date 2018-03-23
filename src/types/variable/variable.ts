@@ -104,6 +104,8 @@ export class Variable {
 
         clone.scope = this.scope.clone();
 
+        clone.location = this.location;
+
         return clone;
     }
 
