@@ -1,7 +1,7 @@
 import { AstScope } from "../astScope";
 import { DebugProtocol } from "vscode-debugprotocol";
 
-import { applyType } from "./applyType";
+import { VariableProcessor } from "./definition/processor";
 import { LibSdbTypes } from "../types";
 
 export enum VariableLocation {
@@ -122,7 +122,8 @@ export class Variable {
         }
     }
 
-    applyType(stateVariable: boolean, storageLocation: string, parentName: string, _variableReferenceIds: LibSdbTypes.VariableReferenceMap): void {
-        applyType(this, stateVariable, storageLocation, parentName, _variableReferenceIds);
+    applyType(stateVariable: boolean, storageLocation: string, parentName: string): void {
+        const processor = new VariableProcessor(this);
+        processor.applyType(stateVariable, storageLocation, parentName);
     }
 }

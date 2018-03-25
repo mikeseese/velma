@@ -1,24 +1,25 @@
-import { Variable, VariableLocation, VariableType } from "./variable";
-import { ValueDetail } from "./detail/value";
-import { ArrayDetail } from "./detail/array";
-import { StructDetail } from "./detail/struct";
-import { MappingDetail } from "./detail/mapping";
+import { Variable, VariableLocation, VariableType } from "../variable";
+import { ValueDetail } from "../detail/value";
+import { ArrayDetail } from "../detail/array";
+import { StructDetail } from "../detail/struct";
+import { MappingDetail } from "../detail/mapping";
 
-import { LibSdbTypes } from "../types";
-import { LibSdbRuntime } from "../../..";
+import { LibSdbRuntime } from "../../../runtime";
 
 export class VariableProcessor {
     private _runtime: LibSdbRuntime;
+    private _variable: Variable;
 
-    constructor(runtime: LibSdbRuntime) {
-        this._runtime = runtime;
+    constructor(variable: Variable) {
+        this._runtime = LibSdbRuntime.instance();
+        this._variable = variable;
     }
 
-    public applyType(variable: Variable, stateVariable: boolean, storageLocation: string, parentName: string, _variableReferenceIds: LibSdbTypes.VariableReferenceMap): void {
-        const varType = variable.originalType;
+    public applyType(stateVariable: boolean, storageLocation: string, parentName: string): void {
+        const varType = this._variable.originalType;
 
         if (stateVariable === true) {
-            variable.location = VariableLocation.Storage;
+            this._variable.location = VariableLocation.Storage;
         }
         else {
             if (storageLocation === "default") {
@@ -30,36 +31,36 @@ export class VariableProcessor {
                 isReferenceType = isReferenceType || varType.includes("[") && varType.includes("]"); // array
                 if (isReferenceType) {
                     if (parentName === "ParameterList") {
-                        variable.location = VariableLocation.Memory;
+                        this._variable.location = VariableLocation.Memory;
                     }
                     else {
-                        variable.location = VariableLocation.Storage;
+                        this._variable.location = VariableLocation.Storage;
                     }
                 }
                 else {
                     // value type
-                    variable.location = VariableLocation.Stack;
+                    this._variable.location = VariableLocation.Stack;
                 }
             }
             else if (storageLocation === "storage") {
-                variable.location = VariableLocation.Storage;
+                this._variable.location = VariableLocation.Storage;
             }
             else if (storageLocation === "memory") {
-                variable.location = VariableLocation.Memory;
+                this._variable.location = VariableLocation.Memory;
             }
             else {
                 // default to stack i guess, probably shouldnt get here though
-                variable.location = VariableLocation.Stack;
+                this._variable.location = VariableLocation.Stack;
             }
         }
 
-        const detail = this.processDetails(variable, varType, _variableReferenceIds);
+        const detail = this.processDetails(varType);
         if (detail !== null) {
-            variable.detail = detail;
+            this._variable.detail = detail;
         }
     }
 
-    public processDetails(variable: Variable, typeName: string, _variableReferenceIds: LibSdbTypes.VariableReferenceMap, isRoot: boolean = true): ValueDetail | ArrayDetail | StructDetail | MappingDetail {
+    public processDetails(typeName: string, isRoot: boolean = true): ValueDetail | ArrayDetail | StructDetail | MappingDetail {
         // first check what the main root node is
         let leaf: ValueDetail | ArrayDetail | StructDetail | MappingDetail | null = null;
         let match: RegExpExecArray | null = null;
@@ -73,13 +74,13 @@ export class VariableProcessor {
 
         if ((match = /^bool/g.exec(typeName)) !== null) {
             // last leaf is a boolean
-            leaf = new ValueDetail(variable);
+            leaf = new ValueDetail(this._variable);
             leaf.type = VariableType.Boolean;
             leaf.storageLength = 32; // TODO: is this right?
         }
         else if ((match = /^uint/g.exec(typeName)) !== null) {
             // last leaf is an uint
-            leaf = new ValueDetail(variable);
+            leaf = new ValueDetail(this._variable);
             leaf.type = VariableType.UnsignedInteger;
 
             const index = match.index + match[0].length;
@@ -95,7 +96,7 @@ export class VariableProcessor {
         }
         else if ((match = /^int/g.exec(typeName)) !== null) {
             // last leaf is an int
-            leaf = new ValueDetail(variable);
+            leaf = new ValueDetail(this._variable);
             leaf.type = VariableType.Integer;
 
             const index = match.index + match[0].length;
@@ -111,21 +112,21 @@ export class VariableProcessor {
         }
         else if ((match = /^address/g.exec(typeName)) !== null) {
             // last leaf is an address
-            leaf = new ValueDetail(variable);
+            leaf = new ValueDetail(this._variable);
             leaf.type = VariableType.Address;
             leaf.storageLength = 20; // TODO: is this right?
         }
         else if ((match = /^(bytes)([1-9]|[12][0-9]|3[0-2])\b/g.exec(typeName)) !== null) {
             // last leaf is a fixed byte array
             // group 1 is the number of bytes
-            leaf = new ValueDetail(variable);
+            leaf = new ValueDetail(this._variable);
             leaf.type = VariableType.FixedByteArray;
             leaf.storageLength = parseInt(match[2]) || 32;
         }
         else if ((match = /^bytes/g.exec(typeName)) !== null) {
             // last leaf is a dynamic bytes array (special array)
-            leaf = new ArrayDetail(variable);
-            _variableReferenceIds.set(leaf.id, leaf);
+            leaf = new ArrayDetail(this._variable);
+            this._runtime._variableReferenceIds.set(leaf.id, leaf);
 
             // A `bytes` is similar to `byte[]`, but it is packed tightly in calldata.
             const index = match.index + match[0].length;
@@ -153,8 +154,8 @@ export class VariableProcessor {
         }
         else if ((match = /^string/g.exec(typeName)) !== null) {
             // last leaf is a string (special array)
-            leaf = new ArrayDetail(variable);
-            _variableReferenceIds.set(leaf.id, leaf);
+            leaf = new ArrayDetail(this._variable);
+            this._runtime._variableReferenceIds.set(leaf.id, leaf);
 
             // `string` is equal to `bytes` but does not allow length or index access (for now).
             const index = match.index + match[0].length;
@@ -182,8 +183,8 @@ export class VariableProcessor {
         }
         else if ((match = /^struct ([\S]+)\.([\S])+/g.exec(typeName)) !== null) {
             // group 1 is the namespace/contract, group 2 is the name of the struct type
-            leaf = new StructDetail(variable);
-            _variableReferenceIds.set(leaf.id, leaf);
+            leaf = new StructDetail(this._variable);
+            this._runtime._variableReferenceIds.set(leaf.id, leaf);
 
             const index = match.index + match[0].length;
             const remainder = typeName.substr(index);
@@ -223,16 +224,16 @@ export class VariableProcessor {
         else if ((match = /^mapping\((.*?(?=(?: => )|$)) => (.*)\)/g.exec(typeName)) !== null) {
             // group 1 is the key, group 2 is the value
             // need to recurse on key and value types
-            leaf = new MappingDetail(variable);
-            _variableReferenceIds.set(leaf.id, leaf);
-            const key = this.processDetails(variable, match[1], _variableReferenceIds, false);
+            leaf = new MappingDetail(this._variable);
+            this._runtime._variableReferenceIds.set(leaf.id, leaf);
+            const key = this.processDetails(match[1], false);
             if (key instanceof ValueDetail || key instanceof ArrayDetail) {
                 leaf.key = key;
             }
             else {
                 throw "shouldnt happen"; // TODO:
             }
-            leaf.value = this.processDetails(variable, match[2], _variableReferenceIds, false);
+            leaf.value = this.processDetails(match[2], false);
             remainderTypeName = typeName.substr(match.index + match[0].length);
         }
         else {
@@ -248,8 +249,8 @@ export class VariableProcessor {
             do {
                 arrayMatch = /^\[([0-9]*)\]/g.exec(remainderTypeName);
                 if (arrayMatch !== null) {
-                    let array = new ArrayDetail(variable);
-                    _variableReferenceIds.set(array.id, array);
+                    let array = new ArrayDetail(this._variable);
+                    this._runtime._variableReferenceIds.set(array.id, array);
 
                     array.isDynamic = arrayMatch.length === 0;
                     array.length = arrayMatch.length > 0 ? parseInt(arrayMatch[1]) : 0;
@@ -298,7 +299,7 @@ export class VariableProcessor {
                             const clone = arrays[i].memberType.clone();
                             arrays[i].members.push(clone);
                             if (!(clone instanceof ValueDetail)) {
-                                _variableReferenceIds.set(clone.id, clone);
+                                this._runtime._variableReferenceIds.set(clone.id, clone);
                             }
                         }
                     }

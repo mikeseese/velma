@@ -18,8 +18,8 @@ const matchReturnTypeFromError = message => message.match(regexpReturnError);
 export class LibSdbEvaluator {
     private _runtime: LibSdbRuntime;
 
-    constructor(runtime: LibSdbRuntime) {
-        this._runtime = runtime;
+    constructor() {
+        this._runtime = LibSdbRuntime.instance();
     }
 
     private findArguments(frameId: number | undefined, expression: string): LibSdbTypes.Variable[] {

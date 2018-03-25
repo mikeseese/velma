@@ -7,8 +7,8 @@ export class LibSdbBreakpoints {
 
     private _breakpointId: number;
 
-    constructor(runtime: LibSdbRuntime) {
-        this._runtime = runtime;
+    constructor() {
+        this._runtime = LibSdbRuntime.instance();
         this._breakpointId = 1;
     }
 

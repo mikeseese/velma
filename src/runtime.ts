@@ -13,6 +13,8 @@ const CircularJSON = require("circular-json");
 
 export class LibSdbRuntime extends EventEmitter {
 
+    private static _instance: LibSdbRuntime;
+
     public _stepData: LibSdbTypes.StepData | null;
 
     public _priorStepData: LibSdbTypes.StepData | null;
@@ -38,10 +40,10 @@ export class LibSdbRuntime extends EventEmitter {
     constructor() {
         super();
 
-        this._interface = new LibSdbInterface(this);
-        this._breakpoints = new LibSdbBreakpoints(this);
-        this._evaluator = new LibSdbEvaluator(this);
-        this._compile = new LibSdbCompile(this);
+        this._interface = new LibSdbInterface();
+        this._breakpoints = new LibSdbBreakpoints();
+        this._evaluator = new LibSdbEvaluator();
+        this._compile = new LibSdbCompile();
 
         this._files = new Map<string, LibSdbTypes.File>();
         this._filesById = new Map<number, LibSdbTypes.File>();
@@ -58,6 +60,12 @@ export class LibSdbRuntime extends EventEmitter {
         this._priorUiCallStack = [];
 
         this._ongoingEvaluation = null;
+
+        LibSdbRuntime._instance = this;
+    }
+
+    public static instance(): LibSdbRuntime {
+        return LibSdbRuntime._instance;
     }
 
     private respondToDebugHook(stepEvent: string, content: any = null) {

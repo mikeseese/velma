@@ -13,8 +13,8 @@ export class LibSdbCompile {
     private _processedContracts: string[];
     private _contractNameMap: Map<string, LibSdbTypes.Contract>;
 
-    constructor(runtime: LibSdbRuntime) {
-        this._runtime = runtime;
+    constructor() {
+        this._runtime = LibSdbRuntime.instance();
     }
 
     public linkCompilerOutput(sourceRootPath: string, compilationResult: CompilerOutput): boolean {

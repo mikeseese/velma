@@ -14,8 +14,8 @@ export class LibSdbInterface {
 
     public evm: any | undefined;
 
-    constructor(runtime: LibSdbRuntime) {
-        this._runtime = runtime;
+    constructor() {
+        this._runtime = LibSdbRuntime.instance();
         this._debuggerMessages = new Map<string, Function | undefined>();
     }
 
