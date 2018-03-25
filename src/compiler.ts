@@ -114,7 +114,7 @@ export class LibSdbCompile {
 
             if (file) {
                 file.sourceId = compilationResult.sources[source].id;
-                this._runtime._filesById.set(file.sourceId, file);
+                this._runtime._filesById.set(file.sourceId!, file);
 
                 // assign AST from the compilationResult.sources variable to each SdbFile
                 file.ast = compilationResult.sources[source].legacyAST;
@@ -151,58 +151,99 @@ export class LibSdbCompile {
     private processContract(contract: LibSdbTypes.Contract): void {
         if (this._processedContracts.indexOf(contract.name) < 0) {
             // haven't processed this contract yet
-            let newScopeVariableMap = new Map<number, LibSdbTypes.VariableMap>();
+            contract.scopeVariableMap = new Map<number, LibSdbTypes.VariableMap>();
+
+            // initialize the variable maps for each scope
             const astWalker = new LibSdbUtils.AstWalker();
-            astWalker.walkDetail(contract.ast, null, 0, (node, parent, depth) => {
+            astWalker.walk(contract.ast, (node) => {
                 if (node.id) {
                     // this is a new scope, add to map
-                    newScopeVariableMap.set(node.id, new Map<string, LibSdbTypes.Variable>());
-                }
-
-                if (node.name === "InheritanceSpecifier" && node.children.length > 0) {
-                    const inheritedContractName = node.children[0].attributes.name;
-                    const inheritedContract = this._contractNameMap.get(inheritedContractName);
-                    if (inheritedContract && this._processedContracts.indexOf(inheritedContractName) < 0) {
-                        this.processContract(inheritedContract);
-                        for (let i = 0; i < inheritedContract.stateVariables.length; i++) {
-                            contract.stateVariables.push(inheritedContract.stateVariables[i].clone()); // TODO: ?
-                        }
-                    }
-                }
-                else if (node.name === "StructDefinition") {
-                    // save the scope that the struct is defined at
-                    contract.structDefinitions.set(node.attributes.name, node.id);
-                }
-                else if (node.name === "FunctionDefinition") {
-                    const functionName = node.attributes.name;
-                    astWalker.walkDetail(node, null, 0, (node, parent, depth) => {
-                        if (node.id) {
-                            // this is a new scope, add to map
-                            newScopeVariableMap.set(node.id, new Map<string, LibSdbTypes.Variable>());
-
-                            if (node.name === "VariableDeclaration") {
-                                const variable = this.createVariableFromAst(node, parent, depth, functionName, contract);
-                                // add the variable to the parent's scope
-                                newScopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
-                            }
-                        }
-
-                        return true;
-                    });
-
-                    // let's not go further into the function
-                    return false;
-                }
-                else if (node.name === "VariableDeclaration") {
-                    // this is outside of a function (i.e. state variables)
-                    const variable = this.createVariableFromAst(node, parent, depth, null, contract);
-                    // add the variable to the parent's scope
-                    newScopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
+                    contract.scopeVariableMap.set(node.id, new Map<string, LibSdbTypes.Variable>());
                 }
 
                 return true;
             });
-            contract.scopeVariableMap = newScopeVariableMap;
+
+            this.processContractChildType(contract, {
+                name: "InheritanceSpecifier",
+                function: this.processContractInheritance
+            });
+            this.processContractChildType(contract, {
+                name: "StructDefinition",
+                function: this.processContractStruct
+            });
+            this.processContractChildType(contract, {
+                name: "FunctionDefinition",
+                function: this.processContractFunction
+            });
+            this.processContractChildType(contract, {
+                name: "VariableDeclaration",
+                function: this.processContractStateVariable
+            });
+        }
+    }
+
+    private processContractInheritance(contract: LibSdbTypes.Contract, node: any) {
+        if (node.children.length > 0) {
+            const inheritedContractName = node.children[0].attributes.name;
+            const inheritedContract = this._contractNameMap.get(inheritedContractName);
+            if (inheritedContract && this._processedContracts.indexOf(inheritedContractName) < 0) {
+                this.processContract(inheritedContract);
+                for (let i = 0; i < inheritedContract.stateVariables.length; i++) {
+                    contract.stateVariables.push(inheritedContract.stateVariables[i].clone()); // TODO: ?
+                }
+            }
+        }
+    }
+
+    private processContractStruct(contract: LibSdbTypes.Contract, node: any) {
+        // save the scope that the struct is defined at
+        contract.structDefinitions.set(node.attributes.name, node.id);
+        const astWalker = new LibSdbUtils.AstWalker();
+        astWalker.walkDetail(node, null, 0, (node, parent, depth) => {
+            if (node.id) {
+                if (node.name === "VariableDeclaration") {
+                    const variable = this.createVariableFromAst(node, parent, depth, null, contract);
+                    // add the variable to the parent's scope
+                    contract.scopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
+                }
+            }
+
+            return true;
+        });
+    }
+
+    private processContractFunction(contract: LibSdbTypes.Contract, node: any) {
+        const functionName = node.attributes.name;
+        const astWalker = new LibSdbUtils.AstWalker();
+        astWalker.walkDetail(node, null, 0, (node, parent, depth) => {
+            if (node.id) {
+                if (node.name === "VariableDeclaration") {
+                    const variable = this.createVariableFromAst(node, parent, depth, functionName, contract);
+                    // add the variable to the parent's scope
+                    contract.scopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
+                }
+            }
+
+            return true;
+        });
+    }
+
+    private processContractStateVariable(contract: LibSdbTypes.Contract, node: any) {
+        // this is outside of a function (i.e. state variables)
+        const variable = this.createVariableFromAst(node, parent, 0, null, contract);
+        // add the variable to the parent's scope
+        contract.scopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
+    }
+
+    private processContractChildType(contract: LibSdbTypes.Contract, childType: {name: string, function: Function}): void {
+        const contractChildren = contract.ast.children[0].children; // TODO:
+
+        for (let i = 0; i < contractChildren.length; i++) {
+            const node = contractChildren[i];
+            if (node.name === childType.name) {
+                childType.function(node);
+            }
         }
     }
 
@@ -236,7 +277,7 @@ export class LibSdbCompile {
         variable.scope.childIndex = childIndex;
         variable.scope.depth = depth;
         variable.position = position;
-        variable.applyType(node.attributes.stateVariable, node.attributes.storageLocation, parent.name, this._runtime._variableReferenceIds);
+        variable.applyType(node.attributes.stateVariable, node.attributes.storageLocation, parent.name);
         if (variable.position === null && node.attributes.stateVariable) {
             variable.position = contract.stateVariables.length;
             contract.stateVariables.push(variable);
