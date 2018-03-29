@@ -40,13 +40,13 @@ export class ArrayDetail {
         return ids;
     }
 
-    clone(): ArrayDetail {
-        let clone = new ArrayDetail(this.variable);
+    clone(variable: Variable = this.variable): ArrayDetail {
+        let clone = new ArrayDetail(variable);
 
         clone.isDynamic = this.isDynamic;
 
         for (let i = 0; i < this.members.length; i++) {
-            clone.members.push(this.members[i].clone());
+            clone.members.push(this.members[i].clone(variable));
         }
 
         return clone;

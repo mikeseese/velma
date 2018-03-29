@@ -19,8 +19,8 @@ export class ValueDetail {
         this.memoryLength = 32;
     }
 
-    clone(): ValueDetail {
-        let clone = new ValueDetail(this.variable);
+    clone(variable: Variable = this.variable): ValueDetail {
+        let clone = new ValueDetail(variable);
 
         clone.type = this.type;
 

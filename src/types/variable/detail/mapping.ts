@@ -36,12 +36,12 @@ export class MappingDetail {
         return ids;
     }
 
-    clone(): MappingDetail {
-        let clone = new MappingDetail(this.variable);
+    clone(variable: Variable = this.variable): MappingDetail {
+        let clone = new MappingDetail(variable);
 
-        clone.key = this.key.clone();
+        clone.key = this.key.clone(variable);
 
-        this.value = this.value.clone();
+        this.value = this.value.clone(variable);
 
         return clone;
     }

@@ -100,7 +100,7 @@ export class Variable {
 
         clone.originalType = this.originalType;
 
-        clone.detail = this.detail.clone();
+        clone.detail = this.detail.clone(clone);
 
         clone.scope = this.scope.clone();
 

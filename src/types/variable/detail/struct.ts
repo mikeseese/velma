@@ -15,7 +15,7 @@ export class StructDetail {
     name: string;
     members: {
         name: string;
-        type: (ValueDetail | ArrayDetail | StructDetail | MappingDetail)
+        detail: (ValueDetail | ArrayDetail | StructDetail | MappingDetail)
     }[];
     memoryLength: number;
 
@@ -29,7 +29,7 @@ export class StructDetail {
         let ids: number[] = [];
 
         for (let i = 0; i < this.members.length; i++) {
-            const type = this.members[i].type;
+            const type = this.members[i].detail;
             if (!(type instanceof ValueDetail)) {
                 ids.push(type.id);
                 ids = ids.concat(type.childIds());
@@ -39,15 +39,15 @@ export class StructDetail {
         return ids;
     }
 
-    clone(): StructDetail {
-        let clone = new StructDetail(this.variable);
+    clone(variable: Variable = this.variable): StructDetail {
+        let clone = new StructDetail(variable);
 
         clone.name = this.name;
 
         for (let i = 0; i < this.members.length; i++) {
             clone.members.push({
                 name: this.members[i].name,
-                type: this.members[i].type.clone()
+                detail: this.members[i].detail.clone(variable)
             });
         }
 
@@ -58,7 +58,7 @@ export class StructDetail {
         let decodedVariables: DecodedVariable[] = [];
 
         for (let i = 0; i < this.members.length; i++) {
-            let decodedVariable = await this.members[i].type.decode(stack, memory, _interface, address);
+            let decodedVariable = await this.members[i].detail.decode(stack, memory, _interface, address);
             decodedVariable.name = this.members[i].name;
             decodedVariables.push(decodedVariable);
         }

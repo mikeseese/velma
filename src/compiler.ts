@@ -164,6 +164,8 @@ export class LibSdbCompile {
                 return true;
             });
 
+            // these are processed separately so that inherited contracts and struct definitions
+            //   are determined before we start using it in variable type definition
             this.processContractChildType(contract, {
                 name: "InheritanceSpecifier",
                 function: this.processContractInheritance
