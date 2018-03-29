@@ -206,9 +206,9 @@ export class VariableProcessor {
                 remainderTypeName = remainder.substr(locationMatch.index + locationMatch[0].length);
             }
 
-            // TODO: process members by finding struct definition
             const structContractName = match[1];
             const structName = match[2];
+            leaf.name = structContractName + "." + structName;
 
             const contract = this._runtime._contractsByName.get(structContractName);
             if (contract) {
@@ -217,6 +217,14 @@ export class VariableProcessor {
                     const structVariables = contract.scopeVariableMap.get(structDefinitionScopeId);
                     if (structVariables !== undefined) {
                         // fill out leaf members?
+                        for (const structVariable of structVariables) {
+                            let variable = structVariable[1].clone();
+                            variable.location = leaf.location;
+                            leaf.members.push({
+                                name: variable.name,
+                                detail: variable.detail
+                            });
+                        }
                     }
                 }
             }
@@ -355,11 +363,11 @@ export class VariableProcessor {
                 else if (detail instanceof StructDetail) {
                     let currentSize = 0;
                     for (let i = 0; i < detail.members.length; i++) {
-                        if (!(detail.members[i].type instanceof ArrayDetail) || !(detail.members[i].type as ArrayDetail).isDynamic) {
+                        if (!(detail.members[i].detail instanceof ArrayDetail) || !(detail.members[i].detail as ArrayDetail).isDynamic) {
                             // we won't know the length for dynamic arrays
                             for (let i = 0; i < detail.members.length; i++) {
-                                this.applyPositions(detail.members[i].type, currentSize);
-                                currentSize += detail.members[i].type.memoryLength;
+                                this.applyPositions(detail.members[i].detail, currentSize);
+                                currentSize += detail.members[i].detail.memoryLength;
                             }
                         }
                     }
