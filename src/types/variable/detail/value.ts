@@ -8,7 +8,7 @@ import { decode as decodeStorage } from "../decode/storage";
 
 export class ValueDetail {
     variable: Variable;
-    position: number; // either the slot number or absolute position in stack/memory (starts off as relative until we know where the variable posisiton is)
+    position: number; // either the relative slot number or relative position in stack/memory
     offset: number | null; // used for storage locations
     type: VariableType;
     storageLength: number;
@@ -32,13 +32,13 @@ export class ValueDetail {
 
         switch (this.variable.location) {
             case VariableLocation.Stack:
-                v = decodeStack((this.variable.position || 0) + this.position, this.type, stack);
+                v = decodeStack((this.variable.stackPosition || 0) + this.position, this.type, stack);
                 break;
             case VariableLocation.Memory:
-                v = decodeMemory((this.variable.position || 0) + this.position, this.type, stack, memory);
+                v = decodeMemory((this.variable.stackPosition || 0), this.position, this.type, stack, memory);
                 break;
             case VariableLocation.Storage:
-                v = await decodeStorage(this.position, this.offset || 0, this.storageLength, this.type, _interface, address);
+                v = await decodeStorage((this.variable.stackPosition || 0) + this.position, this.offset || 0, this.storageLength, this.type, _interface, address);
                 break;
             default:
                 break;

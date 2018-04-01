@@ -141,8 +141,6 @@ export class LibSdbCompile {
         this._processedContracts = [];
         this._contractNameMap.forEach((contract, key) => {
             this.processContract(contract);
-
-            this._runtime._contractsByName.set(key, contract);
         });
 
         return true;
@@ -150,6 +148,8 @@ export class LibSdbCompile {
 
     private processContract(contract: LibSdbTypes.Contract): void {
         if (this._processedContracts.indexOf(contract.name) < 0) {
+            this._runtime._contractsByName.set(contract.name, contract);
+
             // haven't processed this contract yet
             contract.scopeVariableMap = new Map<number, LibSdbTypes.VariableMap>();
 
@@ -158,7 +158,6 @@ export class LibSdbCompile {
             astWalker.walk(contract.ast, (node) => {
                 if (node.id) {
                     // this is a new scope, add to map
-                    contract.scopeVariableMap.set(node.id, new Map<string, LibSdbTypes.Variable>());
                 }
 
                 return true;
@@ -166,22 +165,10 @@ export class LibSdbCompile {
 
             // these are processed separately so that inherited contracts and struct definitions
             //   are determined before we start using it in variable type definition
-            this.processContractChildType(contract, {
-                name: "InheritanceSpecifier",
-                function: this.processContractInheritance
-            });
-            this.processContractChildType(contract, {
-                name: "StructDefinition",
-                function: this.processContractStruct
-            });
-            this.processContractChildType(contract, {
-                name: "FunctionDefinition",
-                function: this.processContractFunction
-            });
-            this.processContractChildType(contract, {
-                name: "VariableDeclaration",
-                function: this.processContractStateVariable
-            });
+            this.processContractChildType(contract, "InheritanceSpecifier");
+            this.processContractChildType(contract, "StructDefinition");
+            this.processContractChildType(contract, "FunctionDefinition");
+            this.processContractChildType(contract, "VariableDeclaration");
         }
     }
 
@@ -207,6 +194,9 @@ export class LibSdbCompile {
                 if (node.name === "VariableDeclaration") {
                     const variable = this.createVariableFromAst(node, parent, depth, null, contract);
                     // add the variable to the parent's scope
+                    if (!contract.scopeVariableMap.has(variable.scope.id)) {
+                        contract.scopeVariableMap.set(variable.scope.id, new Map<string, LibSdbTypes.Variable>());
+                    }
                     contract.scopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
                 }
             }
@@ -223,6 +213,9 @@ export class LibSdbCompile {
                 if (node.name === "VariableDeclaration") {
                     const variable = this.createVariableFromAst(node, parent, depth, functionName, contract);
                     // add the variable to the parent's scope
+                    if (!contract.scopeVariableMap.has(variable.scope.id)) {
+                        contract.scopeVariableMap.set(variable.scope.id, new Map<string, LibSdbTypes.Variable>());
+                    }
                     contract.scopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
                 }
             }
@@ -231,20 +224,43 @@ export class LibSdbCompile {
         });
     }
 
-    private processContractStateVariable(contract: LibSdbTypes.Contract, node: any) {
+    private processContractStateVariable(contract: LibSdbTypes.Contract, node: any, parent: any) {
         // this is outside of a function (i.e. state variables)
         const variable = this.createVariableFromAst(node, parent, 0, null, contract);
         // add the variable to the parent's scope
+        if (!contract.scopeVariableMap.has(variable.scope.id)) {
+            contract.scopeVariableMap.set(variable.scope.id, new Map<string, LibSdbTypes.Variable>());
+        }
         contract.scopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
     }
 
-    private processContractChildType(contract: LibSdbTypes.Contract, childType: {name: string, function: Function}): void {
-        const contractChildren = contract.ast.children[0].children; // TODO:
+    private processContractChildType(contract: LibSdbTypes.Contract, childType: string): void {
+        const contractChildren = contract.ast.children;
 
         for (let i = 0; i < contractChildren.length; i++) {
             const node = contractChildren[i];
-            if (node.name === childType.name) {
-                childType.function(node);
+            if (node.name === childType) {
+                switch (childType) {
+                    case "InheritanceSpecifier": {
+                        this.processContractInheritance(contract, node);
+                        break;
+                    }
+                    case "StructDefinition": {
+                        this.processContractStruct(contract, node);
+                        break;
+                    }
+                    case "FunctionDefinition": {
+                        this.processContractFunction(contract, node);
+                        break;
+                    }
+                    case "VariableDeclaration": {
+                        this.processContractStateVariable(contract, node, contract.ast);
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                }
             }
         }
     }
@@ -265,7 +281,7 @@ export class LibSdbCompile {
         contract.scopeVariableMap.forEach((variables, scopeId) => {
             const variable = variables.get(node.attributes.name);
             if (variable && variable.scope.depth === depth && variable.functionName === functionName) {
-                position = variable.position;
+                position = variable.stackPosition;
             }
         });
 
@@ -278,10 +294,10 @@ export class LibSdbCompile {
         variable.scope.id = node.attributes.scope;
         variable.scope.childIndex = childIndex;
         variable.scope.depth = depth;
-        variable.position = position;
+        variable.stackPosition = position;
         variable.applyType(node.attributes.stateVariable, node.attributes.storageLocation, parent.name);
-        if (variable.position === null && node.attributes.stateVariable) {
-            variable.position = contract.stateVariables.length;
+        if (variable.stackPosition === null && node.attributes.stateVariable) {
+            variable.stackPosition = contract.stateVariables.length;
             contract.stateVariables.push(variable);
         }
 

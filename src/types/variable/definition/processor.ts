@@ -27,7 +27,7 @@ export class VariableProcessor {
                 // if value type
                 let isReferenceType: boolean = false;
                 isReferenceType = isReferenceType || varType.startsWith("struct"); // struct
-                isReferenceType = isReferenceType || varType.startsWith("mapping"); // struct
+                isReferenceType = isReferenceType || varType.startsWith("mapping"); // mapping
                 isReferenceType = isReferenceType || varType.includes("[") && varType.includes("]"); // array
                 if (isReferenceType) {
                     if (parentName === "ParameterList") {
@@ -141,9 +141,11 @@ export class VariableProcessor {
                         break;
                     case "memory":
                         leaf.location = VariableLocation.Memory;
+                        leaf.isPointer = false;
                         break;
                     case "calldata":
                         leaf.location = VariableLocation.CallData;
+                        leaf.isPointer = false;
                         break;
                 }
                 remainderTypeName = remainder.substr(locationMatch.index + locationMatch[0].length);
@@ -170,9 +172,11 @@ export class VariableProcessor {
                         break;
                     case "memory":
                         leaf.location = VariableLocation.Memory;
+                        leaf.isPointer = false;
                         break;
                     case "calldata":
                         leaf.location = VariableLocation.CallData;
+                        leaf.isPointer = false;
                         break;
                 }
                 remainderTypeName = remainder.substr(locationMatch.index + locationMatch[0].length);
@@ -198,9 +202,11 @@ export class VariableProcessor {
                         break;
                     case "memory":
                         leaf.location = VariableLocation.Memory;
+                        leaf.isPointer = false;
                         break;
                     case "calldata":
                         leaf.location = VariableLocation.CallData;
+                        leaf.isPointer = false;
                         break;
                 }
                 remainderTypeName = remainder.substr(locationMatch.index + locationMatch[0].length);
@@ -276,10 +282,12 @@ export class VariableProcessor {
                             }
                             case "memory": {
                                 array.location = VariableLocation.Memory;
+                                array.isPointer = false;
                                 break;
                             }
                             case "calldata": {
                                 array.location = VariableLocation.CallData;
+                                array.isPointer = false;
                                 break;
                             }
                         }
@@ -304,7 +312,13 @@ export class VariableProcessor {
                     if (!arrays[i].isDynamic) {
                         // array is static, and therefore initialized upon declaration, we need to fill it out members now
                         for (let j = 0; j < arrays[i].length; j++) {
-                            const clone = arrays[i].memberType.clone();
+                            let clone = arrays[i].memberType.clone();
+                            if (j === 0) {
+                                clone.position = 0;
+                            }
+                            else {
+                                clone.position = arrays[i].members[j - 1].position + arrays[i].members[j - 1].memoryLength;
+                            }
                             arrays[i].members.push(clone);
                             if (!(clone instanceof ValueDetail)) {
                                 this._runtime._variableReferenceIds.set(clone.id, clone);

@@ -2,12 +2,12 @@ import { VariableType } from "../variable";
 import { decode as decodeValue } from "./value";
 import { BN } from "bn.js";
 
-export function decode(position: number, type: VariableType, stack: BN[], memory: (number | null)[]): string {
+export function decode(stackPosition: number, memoryOffset: number, type: VariableType, stack: BN[], memory: (number | null)[]): string {
     let v = "";
 
-    if (position !== null && stack.length > position) {
+    if (stackPosition !== null && stack.length > stackPosition) {
         // memory
-        const memoryLocation = stack[position].toNumber();
+        const memoryLocation = stack[stackPosition].toNumber() + memoryOffset;
         if (memoryLocation === undefined) {
             return "(invalid memory location)";
         }
@@ -19,7 +19,7 @@ export function decode(position: number, type: VariableType, stack: BN[], memory
                 return "";
             }
             else {
-                return ("0" + (byte).toString(16)).slice(-2); // tslint:disable-line no-bitwise
+                return ("0" + (byte).toString(10)).slice(-2); // tslint:disable-line no-bitwise
             }
         }).join("");
         if (element) {

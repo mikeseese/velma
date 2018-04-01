@@ -41,12 +41,14 @@ export class LibSdbEvaluator {
             let allVariables: LibSdbTypes.VariableMap = new Map<string, LibSdbTypes.Variable>();
             for (let i = 0; i < this._runtime._stepData.scope.length; i++) {
                 const scope = this._runtime._stepData.scope[i];
-                const scopeVars = contract.scopeVariableMap.get(scope.id)!;
-                const names = scopeVars.keys();
-                for (const name of names) {
-                    const variable = scopeVars.get(name);
-                    if (variable && variable.position !== null) {
-                        allVariables.set(name, variable);
+                if (contract.scopeVariableMap.has(scope.id)) {
+                    const scopeVars = contract.scopeVariableMap.get(scope.id)!;
+                    const names = scopeVars.keys();
+                    for (const name of names) {
+                        const variable = scopeVars.get(name);
+                        if (variable && variable.stackPosition !== null) {
+                            allVariables.set(name, variable);
+                        }
                     }
                 }
             }
@@ -366,7 +368,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         this._runtime._ongoingEvaluation.callback = callback;
                         this._runtime._ongoingEvaluation.returnVariable.originalType = returnTypeString;
                         // TODO: potential error with runtime variable reference map!!! create new one?
-                        this._runtime._ongoingEvaluation.returnVariable.applyType(false, "default", "ParameterList", this._runtime._variableReferenceIds);
+                        this._runtime._ongoingEvaluation.returnVariable.applyType(false, "default", "ParameterList");
                         this._runtime._ongoingEvaluation.contractAddress = this._runtime._stepData.contractAddress;
 
                         // push the code

@@ -40,6 +40,8 @@ export class LibSdbRuntime extends EventEmitter {
     constructor() {
         super();
 
+        LibSdbRuntime._instance = this;
+
         this._interface = new LibSdbInterface();
         this._breakpoints = new LibSdbBreakpoints();
         this._evaluator = new LibSdbEvaluator();
@@ -60,8 +62,6 @@ export class LibSdbRuntime extends EventEmitter {
         this._priorUiCallStack = [];
 
         this._ongoingEvaluation = null;
-
-        LibSdbRuntime._instance = this;
     }
 
     public static instance(): LibSdbRuntime {
@@ -106,7 +106,7 @@ export class LibSdbRuntime extends EventEmitter {
                 if (variables) {
                     const variable = variables.get(functionArgument.attributes.name);
                     if (variable) {
-                        variable.position = stack.length + i + (isExternal ? numReturnVariables : -paramListNode.children.length);
+                        variable.stackPosition = stack.length + i + (isExternal ? numReturnVariables : -paramListNode.children.length);
                     }
                 }
             }
@@ -124,7 +124,7 @@ export class LibSdbRuntime extends EventEmitter {
                     // get variable at top of stack
                     // TODO: add support for multiple variable evaluations
 
-                    this._ongoingEvaluation.returnVariable.position = stack.length - 1;
+                    this._ongoingEvaluation.returnVariable.stackPosition = stack.length - 1;
 
                     let returnValue = await this._ongoingEvaluation.returnVariable.detail.decode(stack, memory, this._interface, this._ongoingEvaluation.contractAddress);
                     this._ongoingEvaluation.callback(returnValue);
@@ -149,15 +149,15 @@ export class LibSdbRuntime extends EventEmitter {
                     for (const name of names) {
                         if (name === variableDeclarationNode.attributes.name) {
                             let variable = variables.get(name)!;
-                            if (variable.position === null) {
+                            if (variable.stackPosition === null) {
                                 if (variable.location === LibSdbTypes.VariableLocation.Stack) {
-                                    variable.position = stack.length;
+                                    variable.stackPosition = stack.length;
                                 }
                                 else if (variable.location === LibSdbTypes.VariableLocation.Memory) {
-                                    variable.position = stack.length;
+                                    variable.stackPosition = stack.length;
                                 }
                                 if (variable.location === LibSdbTypes.VariableLocation.Storage) {
-                                    variable.position = stack.length;
+                                    variable.stackPosition = stack.length;
                                 }
                                 break;
                             }
@@ -380,14 +380,16 @@ export class LibSdbRuntime extends EventEmitter {
 
                 for (let i = 0; i < this._stepData.scope.length; i++) {
                     const scope = this._stepData.scope[i];
-                    const scopeVars = contract.scopeVariableMap.get(scope.id)!;
-                    const names = scopeVars.keys();
-                    for (const name of names) {
-                        const variable = scopeVars.get(name);
-                        if (variable) {
-                            const value = await variable.detail.decode(stack, memory, this._interface, this._stepData.contractAddress);
+                    if (contract.scopeVariableMap.has(scope.id)) {
+                        const scopeVars = contract.scopeVariableMap.get(scope.id)!;
+                        const names = scopeVars.keys();
+                        for (const name of names) {
+                            const variable = scopeVars.get(name);
+                            if (variable) {
+                                const value = await variable.detail.decode(stack, memory, this._interface, this._stepData.contractAddress);
 
-                            variables.push(value);
+                                variables.push(value);
+                            }
                         }
                     }
                 }

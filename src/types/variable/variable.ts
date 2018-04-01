@@ -67,7 +67,7 @@ export type VariableReferenceMap = Map<number, LibSdbTypes.ValueDetail | LibSdbT
 export class Variable {
     id: number;
     name: string;
-    position: number | null; // position in stack to value or pointer
+    stackPosition: number | null; // position in stack to value or pointer
     functionName: string | null;
     originalType: string;
     detail: LibSdbTypes.ValueDetail | LibSdbTypes.ArrayDetail | LibSdbTypes.StructDetail | LibSdbTypes.MappingDetail;

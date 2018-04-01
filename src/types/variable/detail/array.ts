@@ -9,7 +9,7 @@ export class ArrayDetail {
     variable: Variable;
     location: VariableLocation;
     isPointer: boolean; // pointer vs reference (used for storage locations)
-    position: number; // either the slot number or absolute position in stack/memory (starts off as relative until we know where the variable posisiton is)
+    position: number; // either the slot number or relative position in stack/memory
     offset: number | null; // used for storage locations
     id: number;
     isDynamic: boolean;

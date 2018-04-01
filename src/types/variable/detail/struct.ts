@@ -7,7 +7,7 @@ import { LibSdbInterface } from "../../../interface";
 
 export class StructDetail {
     variable: Variable;
-    position: number; // either the slot number or absolute position in stack/memory (starts off as relative until we know where the variable posisiton is)
+    position: number; // either the slot number or relative position in stack/memory
     location: VariableLocation;
     isPointer: boolean; // pointer vs reference (used for storage locations)
     offset: number | null; // used for storage locations
