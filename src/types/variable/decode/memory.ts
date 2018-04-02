@@ -19,11 +19,11 @@ export function decode(stackPosition: number, memoryOffset: number, type: Variab
                 return "";
             }
             else {
-                return ("0" + (byte).toString(10)).slice(-2); // tslint:disable-line no-bitwise
+                return ("0" + (byte).toString(16)).slice(-2); // tslint:disable-line no-bitwise
             }
         }).join("");
         if (element) {
-            v = decodeValue(type, new BN(element));
+            v = decodeValue(type, new BN(element, 16));
         }
     }
 
