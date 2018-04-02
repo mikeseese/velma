@@ -39,9 +39,15 @@ export class MappingDetail {
     clone(variable: Variable = this.variable): MappingDetail {
         let clone = new MappingDetail(variable);
 
+        clone.position = this.position;
+
+        clone.offset = this.offset;
+
         clone.key = this.key.clone(variable);
 
-        this.value = this.value.clone(variable);
+        clone.value = this.value.clone(variable);
+
+        clone.memoryLength = this.memoryLength;
 
         return clone;
     }

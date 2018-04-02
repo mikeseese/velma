@@ -22,7 +22,15 @@ export class ValueDetail {
     clone(variable: Variable = this.variable): ValueDetail {
         let clone = new ValueDetail(variable);
 
+        clone.position = this.position;
+
+        clone.offset = this.offset;
+
         clone.type = this.type;
+
+        clone.storageLength = this.storageLength;
+
+        clone.memoryLength = this.memoryLength;
 
         return clone;
     }

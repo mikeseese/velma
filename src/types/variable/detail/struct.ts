@@ -42,6 +42,14 @@ export class StructDetail {
     clone(variable: Variable = this.variable): StructDetail {
         let clone = new StructDetail(variable);
 
+        clone.position = this.position;
+
+        clone.location = this.location;
+
+        clone.isPointer = this.isPointer;
+
+        clone.offset = this.offset;
+
         clone.name = this.name;
 
         for (let i = 0; i < this.members.length; i++) {
@@ -50,6 +58,8 @@ export class StructDetail {
                 detail: this.members[i].detail.clone(variable)
             });
         }
+
+        clone.memoryLength = this.memoryLength;
 
         return clone;
     }

@@ -43,11 +43,25 @@ export class ArrayDetail {
     clone(variable: Variable = this.variable): ArrayDetail {
         let clone = new ArrayDetail(variable);
 
+        clone.location = this.location;
+
+        clone.isPointer = this.isPointer;
+
+        clone.position = this.position;
+
+        clone.offset = this.offset;
+
         clone.isDynamic = this.isDynamic;
+
+        clone.memberType = this.memberType.clone();
+
+        clone.length = this.length;
 
         for (let i = 0; i < this.members.length; i++) {
             clone.members.push(this.members[i].clone(variable));
         }
+
+        clone.memoryLength = this.memoryLength;
 
         return clone;
     }
