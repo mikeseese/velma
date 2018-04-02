@@ -73,12 +73,14 @@ export class VariableProcessor {
         // TODO: contract
 
         if ((match = /^bool/g.exec(typeName)) !== null) {
+            remainderTypeName = typeName.substr(match.index + match[0].length);
             // last leaf is a boolean
             leaf = new ValueDetail(this._variable);
             leaf.type = VariableType.Boolean;
             leaf.storageLength = 32; // TODO: is this right?
         }
         else if ((match = /^uint/g.exec(typeName)) !== null) {
+            remainderTypeName = typeName.substr(match.index + match[0].length);
             // last leaf is an uint
             leaf = new ValueDetail(this._variable);
             leaf.type = VariableType.UnsignedInteger;
@@ -95,6 +97,7 @@ export class VariableProcessor {
             }
         }
         else if ((match = /^int/g.exec(typeName)) !== null) {
+            remainderTypeName = typeName.substr(match.index + match[0].length);
             // last leaf is an int
             leaf = new ValueDetail(this._variable);
             leaf.type = VariableType.Integer;
@@ -111,12 +114,14 @@ export class VariableProcessor {
             }
         }
         else if ((match = /^address/g.exec(typeName)) !== null) {
+            remainderTypeName = typeName.substr(match.index + match[0].length);
             // last leaf is an address
             leaf = new ValueDetail(this._variable);
             leaf.type = VariableType.Address;
             leaf.storageLength = 20; // TODO: is this right?
         }
         else if ((match = /^(bytes)([1-9]|[12][0-9]|3[0-2])\b/g.exec(typeName)) !== null) {
+            remainderTypeName = typeName.substr(match.index + match[0].length);
             // last leaf is a fixed byte array
             // group 1 is the number of bytes
             leaf = new ValueDetail(this._variable);
@@ -124,11 +129,18 @@ export class VariableProcessor {
             leaf.storageLength = parseInt(match[2]) || 32;
         }
         else if ((match = /^bytes/g.exec(typeName)) !== null) {
+            remainderTypeName = typeName.substr(match.index + match[0].length);
             // last leaf is a dynamic bytes array (special array)
             leaf = new ArrayDetail(this._variable);
             this._runtime._variableReferenceIds.set(leaf.id, leaf);
 
             // A `bytes` is similar to `byte[]`, but it is packed tightly in calldata.
+
+            // the member of the `bytes` array is a single byte
+            leaf.memberType = new ValueDetail(this._variable);
+            leaf.memberType.type = VariableType.FixedByteArray;
+            leaf.memberType.storageLength = 32;
+
             const index = match.index + match[0].length;
             const remainder = typeName.substr(index);
             const locationMatch = /^ (storage|memory|calldata) ?(pointer|ref)?/g.exec(remainder);
@@ -155,11 +167,18 @@ export class VariableProcessor {
             leaf.isDynamic = true;
         }
         else if ((match = /^string/g.exec(typeName)) !== null) {
+            remainderTypeName = typeName.substr(match.index + match[0].length);
             // last leaf is a string (special array)
             leaf = new ArrayDetail(this._variable);
             this._runtime._variableReferenceIds.set(leaf.id, leaf);
 
             // `string` is equal to `bytes` but does not allow length or index access (for now).
+
+            // the member of the `string` array is a single byte
+            leaf.memberType = new ValueDetail(this._variable);
+            leaf.memberType.type = VariableType.FixedByteArray;
+            leaf.memberType.storageLength = 32;
+
             const index = match.index + match[0].length;
             const remainder = typeName.substr(index);
             const locationMatch = /^ (storage|memory|calldata) ?(pointer|ref)?/g.exec(remainder);
@@ -186,6 +205,7 @@ export class VariableProcessor {
             leaf.isDynamic = true;
         }
         else if ((match = /^struct ([\S]+)\.([\S])+/g.exec(typeName)) !== null) {
+            remainderTypeName = typeName.substr(match.index + match[0].length);
             // group 1 is the namespace/contract, group 2 is the name of the struct type
             leaf = new StructDetail(this._variable);
             this._runtime._variableReferenceIds.set(leaf.id, leaf);
@@ -226,6 +246,7 @@ export class VariableProcessor {
                         for (const structVariable of structVariables) {
                             let variable = structVariable[1].clone();
                             variable.location = leaf.location;
+                            variable.detail.variable = leaf.variable;
                             leaf.members.push({
                                 name: variable.name,
                                 detail: variable.detail
@@ -236,6 +257,7 @@ export class VariableProcessor {
             }
         }
         else if ((match = /^mapping\((.*?(?=(?: => )|$)) => (.*)\)/g.exec(typeName)) !== null) {
+            remainderTypeName = typeName.substr(match.index + match[0].length);
             // group 1 is the key, group 2 is the value
             // need to recurse on key and value types
             leaf = new MappingDetail(this._variable);
@@ -248,7 +270,6 @@ export class VariableProcessor {
                 throw "shouldnt happen"; // TODO:
             }
             leaf.value = this.processDetails(match[2], false);
-            remainderTypeName = typeName.substr(match.index + match[0].length);
         }
         else {
             // unsupported leaf? as of now, this will get thrown (in the else of the below statement)
@@ -379,10 +400,8 @@ export class VariableProcessor {
                     for (let i = 0; i < detail.members.length; i++) {
                         if (!(detail.members[i].detail instanceof ArrayDetail) || !(detail.members[i].detail as ArrayDetail).isDynamic) {
                             // we won't know the length for dynamic arrays
-                            for (let i = 0; i < detail.members.length; i++) {
-                                this.applyPositions(detail.members[i].detail, currentSize);
-                                currentSize += detail.members[i].detail.memoryLength;
-                            }
+                            this.applyPositions(detail.members[i].detail, currentSize);
+                            currentSize += detail.members[i].detail.memoryLength;
                         }
                     }
                 }
