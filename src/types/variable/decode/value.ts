@@ -18,7 +18,7 @@ export function decode(variableType: VariableType, value: BN) {
             // not supported yet in Solidity (2/21/2018) per solidity.readthedocs.io
             break;
         case VariableType.Address:
-            v = value.toString(16);
+            v = "0x" + value.toString(16);
             break;
         case VariableType.FixedByteArray:
             const byteArrayStr = value.toString(16).match(/.{2}/g);
