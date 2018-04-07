@@ -70,7 +70,7 @@ export class Variable {
     stackPosition: number | null; // position in stack to value or pointer
     functionName: string | null;
     originalType: string;
-    detail: LibSdbTypes.ValueDetail | LibSdbTypes.ArrayDetail | LibSdbTypes.StructDetail | LibSdbTypes.MappingDetail;
+    detail: LibSdbTypes.ValueDetail | LibSdbTypes.ArrayDetail | LibSdbTypes.StructDetail | LibSdbTypes.MappingDetail | null;
     scope: AstScope;
     location: VariableLocation;
 
@@ -83,7 +83,7 @@ export class Variable {
     childIds(): number[] {
         let ids: number[] = [];
 
-        if (!(this.detail instanceof LibSdbTypes.ValueDetail)) {
+        if (!(this.detail instanceof LibSdbTypes.ValueDetail) && this.detail !== null) {
             ids.push(this.detail.id);
             ids = ids.concat(this.detail.childIds());
         }
@@ -100,7 +100,7 @@ export class Variable {
 
         clone.originalType = this.originalType;
 
-        clone.detail = this.detail.clone(clone);
+        clone.detail = this.detail === null ? null : this.detail.clone(clone);
 
         clone.scope = this.scope.clone();
 

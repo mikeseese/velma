@@ -54,13 +54,10 @@ export class VariableProcessor {
             }
         }
 
-        const detail = this.processDetails(varType);
-        if (detail !== null) {
-            this._variable.detail = detail;
-        }
+        this._variable.detail = this.processDetails(varType);
     }
 
-    public processDetails(typeName: string, isRoot: boolean = true): ValueDetail | ArrayDetail | StructDetail | MappingDetail {
+    public processDetails(typeName: string, isRoot: boolean = true): ValueDetail | ArrayDetail | StructDetail | MappingDetail | null {
         // first check what the main root node is
         let leaf: ValueDetail | ArrayDetail | StructDetail | MappingDetail | null = null;
         let match: RegExpExecArray | null = null;
@@ -246,7 +243,9 @@ export class VariableProcessor {
                         for (const structVariable of structVariables) {
                             let variable = structVariable[1].clone();
                             variable.location = leaf.location;
-                            variable.detail.variable = leaf.variable;
+                            if (variable.detail !== null) {
+                                variable.detail.variable = leaf.variable;
+                            }
                             leaf.members.push({
                                 name: variable.name,
                                 detail: variable.detail
@@ -364,7 +363,8 @@ export class VariableProcessor {
             return result;
         }
         else {
-            throw "shouldnt happen";
+            // Type not supported yet
+            return null;
         }
     }
 
@@ -398,10 +398,11 @@ export class VariableProcessor {
                 else if (detail instanceof StructDetail) {
                     let currentSize = 0;
                     for (let i = 0; i < detail.members.length; i++) {
-                        if (!(detail.members[i].detail instanceof ArrayDetail) || !(detail.members[i].detail as ArrayDetail).isDynamic) {
+                        const memberDetail = detail.members[i].detail;
+                        if (memberDetail !== null && (!(memberDetail instanceof ArrayDetail) || !(memberDetail as ArrayDetail).isDynamic)) {
                             // we won't know the length for dynamic arrays
-                            this.applyPositions(detail.members[i].detail, currentSize);
-                            currentSize += detail.members[i].detail.memoryLength;
+                            this.applyPositions(memberDetail, currentSize);
+                            currentSize += memberDetail.memoryLength;
                         }
                     }
                 }

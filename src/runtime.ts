@@ -126,7 +126,13 @@ export class LibSdbRuntime extends EventEmitter {
 
                     this._ongoingEvaluation.returnVariable.stackPosition = stack.length - 1;
 
-                    let returnValue = await this._ongoingEvaluation.returnVariable.detail.decode(stack, memory, this._interface, this._ongoingEvaluation.contractAddress);
+                    let returnValue;
+                    if (this._ongoingEvaluation.returnVariable.detail === null) {
+                        returnValue = null;
+                    }
+                    else {
+                        returnValue = await this._ongoingEvaluation.returnVariable.detail.decode(stack, memory, this._interface, this._ongoingEvaluation.contractAddress);
+                    }
                     this._ongoingEvaluation.callback(returnValue);
 
                     this._ongoingEvaluation = null;
@@ -385,7 +391,7 @@ export class LibSdbRuntime extends EventEmitter {
                         const names = scopeVars.keys();
                         for (const name of names) {
                             const variable = scopeVars.get(name);
-                            if (variable) {
+                            if (variable && variable.detail !== null) {
                                 const value = await variable.detail.decode(stack, memory, this._interface, this._stepData.contractAddress);
 
                                 variables.push(value);

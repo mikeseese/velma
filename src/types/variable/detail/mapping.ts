@@ -11,7 +11,7 @@ export class MappingDetail {
     offset: number | null; // used for storage locations
     id: number;
     key: ValueDetail | ArrayDetail; // cant be dynamic array or contract
-    value: ValueDetail | ArrayDetail | StructDetail | MappingDetail
+    value: ValueDetail | ArrayDetail | StructDetail | MappingDetail | null
     memoryLength: number;
     // Mappings are only allowed for state variables (or as storage reference types in internal functions)
 
@@ -28,7 +28,7 @@ export class MappingDetail {
             ids = ids.concat(this.key.childIds());
         }
 
-        if (!(this.value instanceof ValueDetail)) {
+        if (!(this.value instanceof ValueDetail) && this.value !== null) {
             ids.push(this.value.id);
             ids = ids.concat(this.value.childIds());
         }
@@ -45,7 +45,7 @@ export class MappingDetail {
 
         clone.key = this.key.clone(variable);
 
-        clone.value = this.value.clone(variable);
+        clone.value = this.value === null ? null : this.value.clone(variable);
 
         clone.memoryLength = this.memoryLength;
 
