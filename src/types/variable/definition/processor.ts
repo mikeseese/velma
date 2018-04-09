@@ -5,6 +5,8 @@ import { StructDetail } from "../detail/struct";
 import { MappingDetail } from "../detail/mapping";
 
 import { LibSdbRuntime } from "../../../runtime";
+import { ContractDetail } from "../detail/contract";
+import { LibSdbTypes } from "../../types";
 
 export class VariableProcessor {
     private _runtime: LibSdbRuntime;
@@ -57,12 +59,12 @@ export class VariableProcessor {
         this._variable.detail = this.processDetails(varType);
     }
 
-    public processDetails(typeName: string, isRoot: boolean = true): ValueDetail | ArrayDetail | StructDetail | MappingDetail | null {
+    public processDetails(typeName: string, isRoot: boolean = true): LibSdbTypes.VariableDetailType | null {
         // first check what the main root node is
-        let leaf: ValueDetail | ArrayDetail | StructDetail | MappingDetail | null = null;
+        let leaf: LibSdbTypes.VariableDetailType | null = null;
         let match: RegExpExecArray | null = null;
         let remainderTypeName: string = "";
-        let result: ValueDetail | ArrayDetail | StructDetail | MappingDetail;
+        let result: LibSdbTypes.VariableDetailType;
 
         // TODO: FixedPoint when its implemented in solidity
         // TODO: Enum
@@ -201,7 +203,7 @@ export class VariableProcessor {
             // per the above comment, `string` is a `bytes` with out some access, which is always dynamically sized
             leaf.isDynamic = true;
         }
-        else if ((match = /^struct ([\S]+)\.([\S])+/g.exec(typeName)) !== null) {
+        else if ((match = /^struct ([\S]+)\.([^\r\n\t\f\v \[]+)/g.exec(typeName)) !== null) {
             remainderTypeName = typeName.substr(match.index + match[0].length);
             // group 1 is the namespace/contract, group 2 is the name of the struct type
             leaf = new StructDetail(this._variable);
@@ -269,6 +271,12 @@ export class VariableProcessor {
                 throw "shouldnt happen"; // TODO:
             }
             leaf.value = this.processDetails(match[2], false);
+        }
+        else if ((match = /^contract ([^\r\n\t\f\v \[]+)/g.exec(typeName)) !== null) {
+            remainderTypeName = typeName.substr(match.index + match[0].length);
+
+            leaf = new ContractDetail(this._variable);
+            leaf.name = match[1];
         }
         else {
             // unsupported leaf? as of now, this will get thrown (in the else of the below statement)
@@ -368,7 +376,7 @@ export class VariableProcessor {
         }
     }
 
-    public applyPositions(detail: ValueDetail | ArrayDetail | StructDetail | MappingDetail, offsetPosition: number = 0): void {
+    public applyPositions(detail: LibSdbTypes.VariableDetailType, offsetPosition: number = 0): void {
         switch (detail.variable.location) {
             case (VariableLocation.Stack): {
                 // the detail's position is just the stack position

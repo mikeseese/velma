@@ -1,9 +1,8 @@
 import { Variable, DecodedVariable, VariableLocation } from "../variable";
 import { ValueDetail } from "./value";
-import { ArrayDetail } from "./array";
-import { MappingDetail } from "./mapping";
 import { BN } from "bn.js";
 import { LibSdbInterface } from "../../../interface";
+import { LibSdbTypes } from "../../types";
 
 export class StructDetail {
     variable: Variable;
@@ -15,7 +14,7 @@ export class StructDetail {
     name: string;
     members: {
         name: string;
-        detail: (ValueDetail | ArrayDetail | StructDetail | MappingDetail | null)
+        detail: (LibSdbTypes.VariableDetailType | null)
     }[];
     memoryLength: number;
 

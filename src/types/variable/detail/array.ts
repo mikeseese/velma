@@ -1,9 +1,8 @@
 import { Variable, DecodedVariable, VariableLocation } from "../variable";
 import { ValueDetail } from "./value";
-import { StructDetail } from "./struct";
-import { MappingDetail } from "./mapping";
 import { BN } from "bn.js";
 import { LibSdbInterface } from "../../../interface";
+import { LibSdbTypes } from "../../types";
 
 export class ArrayDetail {
     variable: Variable;
@@ -13,7 +12,7 @@ export class ArrayDetail {
     offset: number | null; // used for storage locations
     id: number;
     isDynamic: boolean;
-    memberType: ValueDetail | ArrayDetail | StructDetail | MappingDetail;
+    memberType: LibSdbTypes.VariableDetailType;
     length: number;
     members: (ArrayDetail["memberType"])[];
     memoryLength: number;

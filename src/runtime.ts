@@ -52,7 +52,7 @@ export class LibSdbRuntime extends EventEmitter {
         this._contractsByName = new Map<string, LibSdbTypes.Contract>();
         this._contractsByAddress = new Map<string, LibSdbTypes.Contract>();
 
-        this._variableReferenceIds = new Map<number, LibSdbTypes.ValueDetail | LibSdbTypes.ArrayDetail | LibSdbTypes.StructDetail | LibSdbTypes.MappingDetail>();
+        this._variableReferenceIds = new Map<number, LibSdbTypes.VariableDetailType>();
 
         this._stepData = null;
         this._priorStepData = null;
@@ -323,7 +323,7 @@ export class LibSdbRuntime extends EventEmitter {
         };
     }
 
-    public async variables(args: DebugProtocol.VariablesArguments): Promise<any[]> {
+    public async variables(args: DebugProtocol.VariablesArguments | null): Promise<any[]> {
         let variables: any[] = [];
 
         if (this._stepData !== null) {
@@ -331,7 +331,7 @@ export class LibSdbRuntime extends EventEmitter {
             const memory = this._stepData.vmData.memory;
             const contract = this._contractsByAddress.get(this._stepData.contractAddress)!;
 
-            if (args.variablesReference > 0 && args.variablesReference < 1000) {
+            if (args !== null && args.variablesReference > 0 && args.variablesReference < 1000000) {
                 // TODO: get children for a variable
                 if (this._variableReferenceIds.has(args.variablesReference)) {
                     const detail = this._variableReferenceIds.get(args.variablesReference)!;

@@ -5,6 +5,7 @@ import { compileStandardWrapper as solcCompile, CompilerOutput } from "solc";
 import { LibSdbTypes } from "./types/types";
 import { LibSdbUtils } from "./utils/utils";
 import { LibSdbRuntime } from "./runtime";
+import { ScopeVariableMap } from "./types/misc";
 
 export class LibSdbCompile {
     public static compile = solcCompile;
@@ -12,6 +13,7 @@ export class LibSdbCompile {
     private _runtime: LibSdbRuntime;
     private _processedContracts: string[];
     private _contractNameMap: Map<string, LibSdbTypes.Contract>;
+    private _oldScopeVariableMaps: Map<string, ScopeVariableMap>;
 
     constructor() {
         this._runtime = LibSdbRuntime.instance();
@@ -24,6 +26,7 @@ export class LibSdbCompile {
         }
 
         this._contractNameMap = new Map<string, LibSdbTypes.Contract>();
+        this._oldScopeVariableMaps = new Map<string, Map<number, Map<string, LibSdbTypes.Variable>>>();
         const astWalker = new LibSdbUtils.AstWalker();
 
         /* -------- Go through contracts JSON -------- */
@@ -151,6 +154,7 @@ export class LibSdbCompile {
             this._runtime._contractsByName.set(contract.name, contract);
 
             // haven't processed this contract yet
+            this._oldScopeVariableMaps.set(contract.name, contract.scopeVariableMap);
             contract.scopeVariableMap = new Map<number, LibSdbTypes.VariableMap>();
 
             // initialize the variable maps for each scope
@@ -166,9 +170,12 @@ export class LibSdbCompile {
             // these are processed separately so that inherited contracts and struct definitions
             //   are determined before we start using it in variable type definition
             this.processContractChildType(contract, "InheritanceSpecifier");
+            this.processContractChildType(contract, "UsingForDirective");
             this.processContractChildType(contract, "StructDefinition");
             this.processContractChildType(contract, "FunctionDefinition");
             this.processContractChildType(contract, "VariableDeclaration");
+
+            this._oldScopeVariableMaps.delete(contract.name);
         }
     }
 
@@ -181,6 +188,16 @@ export class LibSdbCompile {
                 for (let i = 0; i < inheritedContract.stateVariables.length; i++) {
                     contract.stateVariables.push(inheritedContract.stateVariables[i].clone()); // TODO: ?
                 }
+            }
+        }
+    }
+
+    private processContractUsingFor(contract: LibSdbTypes.Contract, node: any) {
+        if (node.children.length > 0) {
+            const usingForContractName = node.children[0].attributes.name;
+            const usingForContract = this._contractNameMap.get(usingForContractName);
+            if (usingForContract && this._processedContracts.indexOf(usingForContractName) < 0) {
+                this.processContract(usingForContract);
             }
         }
     }
@@ -245,6 +262,10 @@ export class LibSdbCompile {
                         this.processContractInheritance(contract, node);
                         break;
                     }
+                    case "UsingForDirective": {
+                        this.processContractUsingFor(contract, node);
+                        break;
+                    }
                     case "StructDefinition": {
                         this.processContractStruct(contract, node);
                         break;
@@ -278,12 +299,15 @@ export class LibSdbCompile {
 
         // try to find the variable in our prior variable to get the stack position (which shouldn't have changed)
         let position: number | null = null;
-        contract.scopeVariableMap.forEach((variables, scopeId) => {
-            const variable = variables.get(node.attributes.name);
-            if (variable && variable.scope.depth === depth && variable.functionName === functionName) {
-                position = variable.stackPosition;
-            }
-        });
+        const scopeVariableMap = this._oldScopeVariableMaps.get(contract.name);
+        if (scopeVariableMap) {
+            scopeVariableMap.forEach((variables, scopeId) => {
+                const variable = variables.get(node.attributes.name);
+                if (variable && variable.scope.depth === depth && variable.functionName === functionName) {
+                    position = variable.stackPosition;
+                }
+            });
+        }
 
         let variable = new LibSdbTypes.Variable();
         const varType: string = node.attributes.type || "";

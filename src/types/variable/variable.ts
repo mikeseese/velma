@@ -62,7 +62,7 @@ export interface DecodedVariable extends DebugProtocol.Variable {
     result: string; // same as value
 }
 
-export type VariableReferenceMap = Map<number, LibSdbTypes.ValueDetail | LibSdbTypes.ArrayDetail | LibSdbTypes.StructDetail | LibSdbTypes.MappingDetail>;
+export type VariableReferenceMap = Map<number, LibSdbTypes.VariableDetailType>;
 
 export class Variable {
     id: number;
@@ -70,7 +70,7 @@ export class Variable {
     stackPosition: number | null; // position in stack to value or pointer
     functionName: string | null;
     originalType: string;
-    detail: LibSdbTypes.ValueDetail | LibSdbTypes.ArrayDetail | LibSdbTypes.StructDetail | LibSdbTypes.MappingDetail | null;
+    detail: LibSdbTypes.VariableDetailType | null;
     scope: AstScope;
     location: VariableLocation;
 
@@ -95,6 +95,8 @@ export class Variable {
         let clone = new Variable();
 
         clone.name = this.name;
+
+        clone.stackPosition = this.stackPosition;
 
         clone.functionName = this.functionName;
 

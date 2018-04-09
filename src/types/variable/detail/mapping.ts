@@ -1,9 +1,9 @@
 import { Variable, DecodedVariable } from "../variable";
 import { ValueDetail } from "./value";
 import { ArrayDetail } from "./array";
-import { StructDetail } from "./struct";
 import { BN } from "bn.js";
 import { LibSdbInterface } from "../../../interface";
+import { LibSdbTypes } from "../../types";
 
 export class MappingDetail {
     variable: Variable;
@@ -11,7 +11,7 @@ export class MappingDetail {
     offset: number | null; // used for storage locations
     id: number;
     key: ValueDetail | ArrayDetail; // cant be dynamic array or contract
-    value: ValueDetail | ArrayDetail | StructDetail | MappingDetail | null
+    value: LibSdbTypes.VariableDetailType | null
     memoryLength: number;
     // Mappings are only allowed for state variables (or as storage reference types in internal functions)
 

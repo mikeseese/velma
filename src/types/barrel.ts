@@ -1,3 +1,5 @@
+import { ValueDetail, ArrayDetail, StructDetail, MappingDetail, ContractDetail } from "./barrel";
+
 export * from "./astScope";
 export * from "./breakpoint";
 export * from "./contract";
@@ -12,3 +14,5 @@ export * from "./variable/detail/value";
 export * from "./variable/detail/array";
 export * from "./variable/detail/struct";
 export * from "./variable/detail/mapping";
+export * from "./variable/detail/contract";
+export type VariableDetailType = ValueDetail | ArrayDetail | StructDetail | MappingDetail | ContractDetail;
