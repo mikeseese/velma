@@ -69,7 +69,6 @@ export class VariableProcessor {
         // TODO: FixedPoint when its implemented in solidity
         // TODO: Enum
         // TODO: Function
-        // TODO: contract
 
         if ((match = /^bool/g.exec(typeName)) !== null) {
             remainderTypeName = typeName.substr(match.index + match[0].length);
