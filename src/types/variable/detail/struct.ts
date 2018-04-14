@@ -24,6 +24,20 @@ export class StructDetail {
         this.members = [];
     }
 
+    getStorageUsed(): number {
+        let storageUsed: number = 0;
+
+        for (let i = 0; i < this.members.length; i++) {
+            const detail = this.members[i].detail;
+            if (detail !== null) {
+                storageUsed += detail.getStorageUsed();
+            }
+        }
+
+        // structs use the entire slot
+        return Math.ceil(storageUsed / 32) * 32;
+    }
+
     childIds(): number[] {
         let ids: number[] = [];
 

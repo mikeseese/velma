@@ -18,6 +18,10 @@ export class ContractDetail {
         this.storageLength = 20; // TODO: does it only take up a 20 byte address?
     }
 
+    getStorageUsed(): number {
+        return this.storageLength;
+    }
+
     childIds(): number[] {
         let ids: number[] = [];
 

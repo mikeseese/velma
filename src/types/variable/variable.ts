@@ -67,7 +67,7 @@ export type VariableReferenceMap = Map<number, LibSdbTypes.VariableDetailType>;
 export class Variable {
     id: number;
     name: string;
-    stackPosition: number | null; // position in stack to value or pointer
+    position: number | null; // position in stack to value or pointer
     functionName: string | null;
     originalType: string;
     detail: LibSdbTypes.VariableDetailType | null;
@@ -96,7 +96,7 @@ export class Variable {
 
         clone.name = this.name;
 
-        clone.stackPosition = this.stackPosition;
+        clone.position = this.position;
 
         clone.functionName = this.functionName;
 

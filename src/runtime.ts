@@ -106,7 +106,7 @@ export class LibSdbRuntime extends EventEmitter {
                 if (variables) {
                     const variable = variables.get(functionArgument.attributes.name);
                     if (variable) {
-                        variable.stackPosition = stack.length + i + (isExternal ? numReturnVariables : -paramListNode.children.length);
+                        variable.position = stack.length + i + (isExternal ? numReturnVariables : -paramListNode.children.length);
                     }
                 }
             }
@@ -124,7 +124,7 @@ export class LibSdbRuntime extends EventEmitter {
                     // get variable at top of stack
                     // TODO: add support for multiple variable evaluations
 
-                    this._ongoingEvaluation.returnVariable.stackPosition = stack.length - 1;
+                    this._ongoingEvaluation.returnVariable.position = stack.length - 1;
 
                     let returnValue;
                     if (this._ongoingEvaluation.returnVariable.detail === null) {
@@ -155,15 +155,15 @@ export class LibSdbRuntime extends EventEmitter {
                     for (const name of names) {
                         if (name === variableDeclarationNode.attributes.name) {
                             let variable = variables.get(name)!;
-                            if (variable.stackPosition === null) {
+                            if (variable.position === null) {
                                 if (variable.location === LibSdbTypes.VariableLocation.Stack) {
-                                    variable.stackPosition = stack.length;
+                                    variable.position = stack.length;
                                 }
                                 else if (variable.location === LibSdbTypes.VariableLocation.Memory) {
-                                    variable.stackPosition = stack.length;
+                                    variable.position = stack.length;
                                 }
                                 if (variable.location === LibSdbTypes.VariableLocation.Storage) {
-                                    variable.stackPosition = stack.length;
+                                    variable.position = stack.length;
                                 }
                                 break;
                             }

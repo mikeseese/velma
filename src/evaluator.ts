@@ -46,7 +46,7 @@ export class LibSdbEvaluator {
                     const names = scopeVars.keys();
                     for (const name of names) {
                         const variable = scopeVars.get(name);
-                        if (variable && variable.stackPosition !== null) {
+                        if (variable && variable.position !== null) {
                             allVariables.set(name, variable);
                         }
                     }

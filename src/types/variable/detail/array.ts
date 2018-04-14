@@ -25,6 +25,27 @@ export class ArrayDetail {
         this.members = [];
     }
 
+    getStorageUsed(): number {
+        if (this.isDynamic) {
+            // dynamic arrays only take up one slot; the other array data is at keccak256(p)
+            //   and is not applicable in this context (figuring out how many slots have been used in terms of 'p')
+            return 32;
+        }
+        else {
+            let storageUsed: number = 0;
+
+            for (let i = 0; i < this.members.length; i++) {
+                const detail = this.members[i];
+                if (detail !== null) {
+                    storageUsed += detail.getStorageUsed();
+                }
+            }
+
+            // structs use the entire slot
+            return Math.ceil(storageUsed / 32) * 32;
+        }
+    }
+
     childIds(): number[] {
         let ids: number[] = [];
 

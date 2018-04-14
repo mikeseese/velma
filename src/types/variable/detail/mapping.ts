@@ -20,6 +20,11 @@ export class MappingDetail {
         this.id = Variable.nextId++;
     }
 
+    getStorageUsed(): number {
+        // for this context (determing number of 'p' slots used), mappings only take the initial 
+        return 32;
+    }
+
     childIds(): number[] {
         let ids: number[] = [];
 
