@@ -54,6 +54,7 @@ export class ContractProcessor {
             const inheritedContract = this._compilationProcessor._contractNameMap.get(inheritedContractName);
             if (inheritedContract && this._compilationProcessor._processedContracts.indexOf(inheritedContractName) < 0) {
                 const contractProcessor = new ContractProcessor(this._compilationProcessor, inheritedContract);
+                contractProcessor._currentStorageSlot += this._currentStorageSlot; // needed if we have multiple inherited contracts (which would all start at 0 slot)
                 contractProcessor.process();
                 for (let i = 0; i < inheritedContract.stateVariables.length; i++) {
                     this._contract.stateVariables.push(inheritedContract.stateVariables[i].clone()); // TODO: ?
@@ -192,25 +193,13 @@ export class ContractProcessor {
         variable.scope.childIndex = childIndex;
         variable.scope.depth = depth;
         variable.position = position;
-        variable.applyType(node.attributes.stateVariable, node.attributes.storageLocation, parent.name);
+        variable.applyType(node.attributes.stateVariable, node.attributes.storageLocation, parent.name, this);
         if (variable.position === null && node.attributes.stateVariable && variable.detail !== null) {
-            if (!(variable.detail instanceof LibSdbTypes.ValueDetail) && !(variable.detail instanceof LibSdbTypes.ContractDetail)) {
-                // always start new slots for arrays, structs, and mappings
-                this._currentStorageSlot++;
-                this._currentStorageSlotOffset = 0;
-            }
-            else {
-                // check if we have enough space
-                const spaceLeft = 32 - this._currentStorageSlotOffset;
-                if (spaceLeft - variable.detail.storageLength < 0) {
-                    this._currentStorageSlot++;
-                    this._currentStorageSlotOffset = 0;
-                }
-            }
-            variable.position = this._currentStorageSlot;
-            const storageUsed = variable.detail.getStorageUsed();
-            this._currentStorageSlot += Math.floor(storageUsed / 32);
-            this._currentStorageSlotOffset = storageUsed % 32;
+            // TODO:
+            // variable.position = this._currentStorageSlot;
+            // const storageUsed = variable.detail.getStorageUsed();
+            // this._currentStorageSlot += Math.floor(storageUsed / 32);
+            // this._currentStorageSlotOffset = storageUsed % 32;
             this._contract.stateVariables.push(variable);
         }
 

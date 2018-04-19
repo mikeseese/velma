@@ -3,6 +3,7 @@ import { DebugProtocol } from "vscode-debugprotocol";
 
 import { VariableProcessor } from "./definition/processor";
 import { LibSdbTypes } from "../types";
+import { ContractProcessor } from "../../compilation/contractProcessor";
 
 export enum VariableLocation {
     Stack,
@@ -124,8 +125,8 @@ export class Variable {
         }
     }
 
-    applyType(stateVariable: boolean, storageLocation: string, parentName: string): void {
-        const processor = new VariableProcessor(this);
+    applyType(stateVariable: boolean, storageLocation: string, parentName: string, contractProcessor: ContractProcessor): void {
+        const processor = new VariableProcessor(this, contractProcessor);
         processor.applyType(stateVariable, storageLocation, parentName);
     }
 }

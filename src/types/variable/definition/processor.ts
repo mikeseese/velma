@@ -7,14 +7,17 @@ import { MappingDetail } from "../detail/mapping";
 import { LibSdbRuntime } from "../../../runtime";
 import { ContractDetail } from "../detail/contract";
 import { LibSdbTypes } from "../../types";
+import { ContractProcessor } from "../../../compilation/contractProcessor";
 
 export class VariableProcessor {
     private _runtime: LibSdbRuntime;
     private _variable: Variable;
+    private _contractProcessor: ContractProcessor;
 
-    constructor(variable: Variable) {
+    constructor(variable: Variable, contractProcessor: ContractProcessor) {
         this._runtime = LibSdbRuntime.instance();
         this._variable = variable;
+        this._contractProcessor = contractProcessor;
     }
 
     public applyType(stateVariable: boolean, storageLocation: string, parentName: string): void {
@@ -375,7 +378,119 @@ export class VariableProcessor {
         }
     }
 
-    public applyPositions(detail: LibSdbTypes.VariableDetailType, offsetPosition: number = 0): void {
+    private applyMemoryPositions(detail: LibSdbTypes.VariableDetailType, offsetPosition: number = 0): void {
+        // offet is only used for storage
+        detail.offset = null;
+
+        if (detail instanceof ValueDetail) {
+            detail.position = offsetPosition;
+        }
+        else if (detail instanceof ArrayDetail) {
+            if (!detail.isDynamic) {
+                // fixed array, we got members
+                if (!(detail.memberType instanceof ArrayDetail) || !detail.memberType.isDynamic) {
+                    // we won't know the length for dynamic arrays
+                    for (let i = 0; i < detail.members.length; i++) {
+                        this.applyMemoryPositions(detail.members[i], i * detail.memberType.memoryLength);
+                    }
+                }
+            }
+        }
+        else if (detail instanceof StructDetail) {
+            let currentSize = 0;
+            for (let i = 0; i < detail.members.length; i++) {
+                const memberDetail = detail.members[i].detail;
+                if (memberDetail !== null && (!(memberDetail instanceof ArrayDetail) || !(memberDetail as ArrayDetail).isDynamic)) {
+                    // we won't know the length for dynamic arrays
+                    this.applyMemoryPositions(memberDetail, currentSize);
+                    currentSize += memberDetail.memoryLength;
+                }
+            }
+        }
+        else if (detail instanceof MappingDetail) {
+            // Mappings are only allowed for state variables (or as storage reference types in internal functions).
+            // this isn't applicable/feasible
+        }
+        else if (detail instanceof ContractDetail) {
+            detail.position = offsetPosition;
+        }
+    }
+
+    private storageIncrementSlot(): void {
+        this._contractProcessor._currentStorageSlot++;
+        this._contractProcessor._currentStorageSlotOffset = 0;
+    }
+
+    private storageIncrementOffset(offset: number): void {
+        this._contractProcessor._currentStorageSlotOffset += offset;
+    }
+
+    private storageCheckSpaceLeft(storageLength: number): void {
+        // check if we have enough space
+        const spaceLeft = 32 - this._contractProcessor._currentStorageSlotOffset;
+        if (spaceLeft - storageLength < 0) {
+            this.storageIncrementSlot();
+        }
+    }
+
+    private storageCheckNewSlotRequired(): void {
+        if (this._contractProcessor._currentStorageSlotOffset > 0) {
+            // always start new slots for arrays, structs, and mappings
+            this.storageIncrementSlot();
+        }
+    }
+
+    private storageCheckEndOfSlot(): void {
+        if (this._contractProcessor._currentStorageSlotOffset >= 32) {
+            this.storageIncrementSlot();
+        }
+    }
+
+    private applyStoragePosition(detail: LibSdbTypes.VariableDetailType): void {
+        detail.position = this._contractProcessor._currentStorageSlot;
+        detail.offset = this._contractProcessor._currentStorageSlotOffset;
+    }
+
+    private applyStoragePositions(detail: LibSdbTypes.VariableDetailType): void {
+        if (detail instanceof ValueDetail) {
+            this.storageCheckSpaceLeft(detail.storageLength);
+            this.applyStoragePosition(detail);
+            this.storageIncrementOffset(detail.storageLength);
+            this.storageCheckEndOfSlot();
+        }
+        else if (detail instanceof ArrayDetail) {
+            this.storageCheckNewSlotRequired();
+            this.applyStoragePosition(detail);
+            if (!detail.isDynamic) {
+                // TODO: do storage for children
+            }
+            if (detail.position === this._contractProcessor._currentStorageSlot || this._contractProcessor._currentStorageSlotOffset > 0) {
+                // occupy whole slots
+                this.storageIncrementSlot();
+            }
+        }
+        else if (detail instanceof StructDetail) {
+            this.storageCheckNewSlotRequired();
+            this.applyStoragePosition(detail);
+            // TODO: do storage for children
+            if (detail.position === this._contractProcessor._currentStorageSlot || this._contractProcessor._currentStorageSlotOffset > 0) {
+                // occupy whole slots
+                this.storageIncrementSlot();
+            }
+        }
+        else if (detail instanceof MappingDetail) {
+            this.storageCheckNewSlotRequired();
+            this.applyStoragePosition(detail);
+            this.storageIncrementSlot();
+        }
+        else if (detail instanceof ContractDetail) {
+            this.storageCheckSpaceLeft(detail.storageLength);
+            this.applyStoragePosition(detail);
+            this.storageCheckEndOfSlot();
+        }
+    }
+
+    public applyPositions(detail: LibSdbTypes.VariableDetailType): void {
         switch (detail.variable.location) {
             case (VariableLocation.Stack): {
                 // the detail's position is just the stack position
@@ -385,38 +500,7 @@ export class VariableProcessor {
                 break;
             }
             case (VariableLocation.Memory): {
-                // offet is only used for storage
-                detail.offset = null;
-
-                if (detail instanceof ValueDetail) {
-                    detail.position = offsetPosition;
-                }
-                else if (detail instanceof ArrayDetail) {
-                    if (!detail.isDynamic) {
-                        // fixed array, we got members
-                        if (!(detail.memberType instanceof ArrayDetail) || !detail.memberType.isDynamic) {
-                            // we won't know the length for dynamic arrays
-                            for (let i = 0; i < detail.members.length; i++) {
-                                this.applyPositions(detail.members[i], i * detail.memberType.memoryLength);
-                            }
-                        }
-                    }
-                }
-                else if (detail instanceof StructDetail) {
-                    let currentSize = 0;
-                    for (let i = 0; i < detail.members.length; i++) {
-                        const memberDetail = detail.members[i].detail;
-                        if (memberDetail !== null && (!(memberDetail instanceof ArrayDetail) || !(memberDetail as ArrayDetail).isDynamic)) {
-                            // we won't know the length for dynamic arrays
-                            this.applyPositions(memberDetail, currentSize);
-                            currentSize += memberDetail.memoryLength;
-                        }
-                    }
-                }
-                else if (detail instanceof MappingDetail) {
-                    // Mappings are only allowed for state variables (or as storage reference types in internal functions).
-                    // this isn't applicable/feasible
-                }
+                this.applyMemoryPositions(detail);
                 break;
             }
             case (VariableLocation.CallData): {
@@ -427,6 +511,7 @@ export class VariableProcessor {
                 break;
             }
             case (VariableLocation.Storage): {
+                this.applyStoragePositions(detail);
                 break;
             }
         }

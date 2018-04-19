@@ -50,7 +50,7 @@ export class ValueDetail {
                 v = decodeMemory((this.variable.position || 0), this.position, this.type, stack, memory);
                 break;
             case VariableLocation.Storage:
-                v = await decodeStorage((this.variable.position || 0) + this.position, this.offset || 0, this.storageLength, this.type, _interface, address);
+                v = await decodeStorage(this.position, this.offset || 0, this.storageLength, this.type, _interface, address);
                 break;
             default:
                 break;

@@ -1,6 +1,7 @@
 import * as WebSocket from "ws";
 
 import { LibSdbRuntime } from "./runtime";
+import { LibSdbCompilationProcessor } from "./compilation/processor";
 
 const uuidv4 = require("uuid").v4;
 
@@ -303,11 +304,13 @@ export class LibSdbInterface {
             });
 
             if (triggerType === "linkCompilerOutput") {
-                this._runtime._compile.linkCompilerOutput(data.content.sourceRootPath, data.content.compilationResult);
+                const compilationProcessor = new LibSdbCompilationProcessor();
+                compilationProcessor.linkCompilerOutput(data.content.sourceRootPath, data.content.compilationResult);
                 this.respondToDebugHook("stopOnBreakpoint", data.id);
             }
             else if (triggerType === "linkContractAddress") {
-                const contract = this._runtime._compile.linkContractAddress(data.content.contractName, data.content.address);
+                const compilationProcessor = new LibSdbCompilationProcessor();
+                const contract = compilationProcessor.linkContractAddress(data.content.contractName, data.content.address);
                 if (contract !== null) {
                     await this._runtime._breakpoints.verifyBreakpoints(contract.sourcePath);
                     await this._runtime.sendVariableDeclarations(data.content.address.toLowerCase());

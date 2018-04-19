@@ -5,11 +5,13 @@ const CircularJSON = require("circular-json");
 
 import { LibSdbTypes } from "./types/types";
 import { LibSdbUtils } from "./utils/utils";
-import { LibSdbCompile } from "./compiler";
 import { LibSdbRuntime } from "./runtime";
-import { CompilerOutput, CompilerInput } from "solc";
+import { CompilerOutput, CompilerInput, compileStandardWrapper } from "solc";
 import { readFileSync } from "fs";
 import { join as joinPath } from "path";
+import { ContractProcessor } from "./compilation/contractProcessor";
+import { LibSdbCompilationProcessor } from "./compilation/processor";
+//import { Variable } from "./types/barrel";
 
 /** Parse the error message thrown with a naive compile in order to determine the actual return type. This is the hacky alternative to parsing an AST. */
 const regexpReturnError = /Return argument type (.*) is not implicitly convertible to expected type \(type of first return variable\) bool./
@@ -260,7 +262,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                     };
                     compileInput.sources = this.generateCompilerInputSourcesForContract(contract);
                     compileInput.sources[newFile.relativePath()] = { content: newFile.sourceCode };
-                    let result: CompilerOutput = JSON.parse(LibSdbCompile.compile(JSON.stringify(compileInput)));
+                    let result: CompilerOutput = JSON.parse(compileStandardWrapper(JSON.stringify(compileInput)));
                     let returnTypeString: string = "bool";
                     if (result.errors !== undefined) {
                         for (let i = 0; i < result.errors.length; i++) {
@@ -274,7 +276,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                                 newFile.sourceCode = newFile.sourceCode.replace(refString, repString);
                                 newFile.lineBreaks = LibSdbUtils.SourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
                                 compileInput.sources[newFile.relativePath()] = { content: newFile.sourceCode };
-                                result = JSON.parse(LibSdbCompile.compile(JSON.stringify(compileInput)));
+                                result = JSON.parse(compileStandardWrapper(JSON.stringify(compileInput)));
                                 break;
                             }
                         }
@@ -305,8 +307,9 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                     this._runtime._files.set(newFile.fullPath(), newFile);
                     this._runtime._contractsByAddress.set(this._runtime._stepData.contractAddress, newContract);
 
-                    this._runtime._compile.linkCompilerOutput(newFile.sourceRoot, result);
-                    this._runtime._compile.linkContractAddress(newContract.name, this._runtime._stepData.contractAddress);
+                    const compilationProcessor = new LibSdbCompilationProcessor();
+                    compilationProcessor.linkCompilerOutput(newFile.sourceRoot, result);
+                    compilationProcessor.linkContractAddress(newContract.name, this._runtime._stepData.contractAddress);
                     newContract = this._runtime._contractsByAddress.get(this._runtime._stepData.contractAddress)!;
 
                     const astWalker = new LibSdbUtils.AstWalker();
@@ -314,6 +317,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                     const codeOffset = functionInsert.code.length + functionInsert.reference.length + 1; // 1 is for the \n after the reference insertion
 
                     let sourceLocationEvalFunction = null;
+                    //let returnVariable: Variable | null = null;
                     astWalker.walk(newContract.ast, (node) => {
                         if (sourceLocationEvalFunction !== null) {
                             return false;
@@ -323,6 +327,11 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                             for (let i = 0; i < node.children.length; i++) {
                                 if (node.children[i].attributes.value === functionInsert.name) {
                                     sourceLocationEvalFunction = LibSdbUtils.SourceMappingDecoder.sourceLocationFromAstNode(node);
+                                    astWalker.walk(node, (node) => {
+                                        if (node.name === "ParameterList") {
+                                            return false;
+                                        }
+                                    });
                                     return true;
                                 }
                             }
@@ -368,7 +377,8 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         this._runtime._ongoingEvaluation.callback = callback;
                         this._runtime._ongoingEvaluation.returnVariable.originalType = returnTypeString;
                         // TODO: potential error with runtime variable reference map!!! create new one?
-                        this._runtime._ongoingEvaluation.returnVariable.applyType(false, "default", "ParameterList");
+                        const contractProcessor = new ContractProcessor(compilationProcessor, newContract);
+                        this._runtime._ongoingEvaluation.returnVariable.applyType(false, "default", "ParameterList", contractProcessor);
                         this._runtime._ongoingEvaluation.contractAddress = this._runtime._stepData.contractAddress;
 
                         // push the code
