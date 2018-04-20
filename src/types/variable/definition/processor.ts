@@ -456,7 +456,6 @@ export class VariableProcessor {
             this.storageCheckNewSlotRequired();
             this.applyStoragePosition(detail);
             if (!detail.isDynamic) {
-                // TODO: do storage for children
                 for (let i = 0; i < detail.members.length; i++) {
                     this.applyStoragePositions(detail.members[i]);
                 }
@@ -469,7 +468,12 @@ export class VariableProcessor {
         else if (detail instanceof StructDetail) {
             this.storageCheckNewSlotRequired();
             this.applyStoragePosition(detail);
-            // TODO: do storage for children
+            for (let i = 0; i < detail.members.length; i++) {
+                const memberDetail = detail.members[i].detail;
+                if (memberDetail !== null) {
+                    this.applyStoragePositions(memberDetail);
+                }
+            }
             if (detail.position === this._contractProcessor._currentStorageSlot || this._contractProcessor._currentStorageSlotOffset > 0) {
                 // occupy whole slots
                 this.storageIncrementSlot();
