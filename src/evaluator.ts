@@ -378,7 +378,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         this._runtime._ongoingEvaluation.returnVariable.originalType = returnTypeString;
                         // TODO: potential error with runtime variable reference map!!! create new one?
                         const contractProcessor = new ContractProcessor(compilationProcessor, newContract);
-                        this._runtime._ongoingEvaluation.returnVariable.applyType(false, "default", "ParameterList", contractProcessor);
+                        this._runtime._ongoingEvaluation.returnVariable.applyType("default", "ParameterList", contractProcessor);
                         this._runtime._ongoingEvaluation.contractAddress = this._runtime._stepData.contractAddress;
 
                         // push the code

@@ -4,6 +4,7 @@ import { DebugProtocol } from "vscode-debugprotocol";
 import { VariableProcessor } from "./definition/processor";
 import { LibSdbTypes } from "../types";
 import { ContractProcessor } from "../../compilation/contractProcessor";
+import { LibSdbConstants } from "../../utils/constants";
 
 export enum VariableLocation {
     Stack,
@@ -74,11 +75,13 @@ export class Variable {
     detail: LibSdbTypes.VariableDetailType | null;
     scope: AstScope;
     location: VariableLocation;
+    isStateVariable: boolean;
 
-    public static nextId: number = 1;
+    public static nextId: number = LibSdbConstants.ScopeTypes.variableStart.frame;
 
     constructor() {
         this.id = Variable.nextId++;
+        this.isStateVariable = false;
     }
 
     childIds(): number[] {
@@ -109,6 +112,8 @@ export class Variable {
 
         clone.location = this.location;
 
+        clone.isStateVariable = this.isStateVariable;
+
         return clone;
     }
 
@@ -125,8 +130,8 @@ export class Variable {
         }
     }
 
-    applyType(stateVariable: boolean, storageLocation: string, parentName: string, contractProcessor: ContractProcessor): void {
+    applyType(storageLocation: string, parentName: string, contractProcessor: ContractProcessor): void {
         const processor = new VariableProcessor(this, contractProcessor);
-        processor.applyType(stateVariable, storageLocation, parentName);
+        processor.applyType(storageLocation, parentName);
     }
 }

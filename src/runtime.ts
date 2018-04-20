@@ -7,6 +7,7 @@ import { LibSdbInterface } from "./interface";
 import { LibSdbBreakpoints } from "./breakpoints";
 import { LibSdbEvaluator } from "./evaluator";
 import { ValueDetail } from "./types/barrel";
+import { LibSdbConstants } from "./utils/constants";
 
 const CircularJSON = require("circular-json");
 
@@ -323,12 +324,12 @@ export class LibSdbRuntime extends EventEmitter {
     public async variables(args: DebugProtocol.VariablesArguments | null): Promise<any[]> {
         let variables: any[] = [];
 
-        if (this._stepData !== null) {
+        if (this._stepData !== null && args !== null && "variablesReference" in args) {
             const stack = this._stepData.vmData.stack;
             const memory = this._stepData.vmData.memory;
             const contract = this._contractsByAddress.get(this._stepData.contractAddress)!;
 
-            if (args !== null && args.variablesReference > 0 && args.variablesReference < 1000000) {
+            if (args.variablesReference >= LibSdbConstants.ScopeTypes.variableStart.frame) {
                 // TODO: get children for a variable
                 if (this._variableReferenceIds.has(args.variablesReference)) {
                     const detail = this._variableReferenceIds.get(args.variablesReference)!;
@@ -337,7 +338,37 @@ export class LibSdbRuntime extends EventEmitter {
                     }
                 }
             }
-            else {
+            else if (args.variablesReference === LibSdbConstants.ScopeTypes.local.frame) {
+                for (let i = 0; i < this._stepData.scope.length; i++) {
+                    const scope = this._stepData.scope[i];
+                    if (contract.scopeVariableMap.has(scope.id)) {
+                        const scopeVars = contract.scopeVariableMap.get(scope.id)!;
+                        const names = scopeVars.keys();
+                        for (const name of names) {
+                            const variable = scopeVars.get(name);
+                            if (variable && variable.detail !== null && !variable.isStateVariable) {
+                                const value = await variable.detail.decode(stack, memory, this._interface, this._stepData.contractAddress);
+
+                                variables.push(value);
+                            }
+                        }
+                    }
+                }
+            }
+            else if (args.variablesReference === LibSdbConstants.ScopeTypes.state.frame) {
+                for (let i = 0; i < contract.stateVariables.length; i++) {
+                    const variable = contract.stateVariables[i];
+                    if (variable && variable.detail !== null) {
+                        const value = await variable.detail.decode(stack, memory, this._interface, this._stepData.contractAddress);
+
+                        variables.push(value);
+                    }
+                }
+            }
+            else if (args.variablesReference === LibSdbConstants.ScopeTypes.global.frame) {
+                //
+            }
+            else if (args.variablesReference === LibSdbConstants.ScopeTypes.dev.frame) {
                 variables.push({
                     name: "Contract Address",
                     evaluateName: "Contract Address",
@@ -380,22 +411,9 @@ export class LibSdbRuntime extends EventEmitter {
                     value: this._stepData.vmData.stack.length + "",
                     variablesReference: 0
                 });
-
-                for (let i = 0; i < this._stepData.scope.length; i++) {
-                    const scope = this._stepData.scope[i];
-                    if (contract.scopeVariableMap.has(scope.id)) {
-                        const scopeVars = contract.scopeVariableMap.get(scope.id)!;
-                        const names = scopeVars.keys();
-                        for (const name of names) {
-                            const variable = scopeVars.get(name);
-                            if (variable && variable.detail !== null) {
-                                const value = await variable.detail.decode(stack, memory, this._interface, this._stepData.contractAddress);
-
-                                variables.push(value);
-                            }
-                        }
-                    }
-                }
+            }
+            else {
+                // TODO: shrug, anything?
             }
         }
 

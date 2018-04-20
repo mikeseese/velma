@@ -193,7 +193,8 @@ export class ContractProcessor {
         variable.scope.childIndex = childIndex;
         variable.scope.depth = depth;
         variable.position = position;
-        variable.applyType(node.attributes.stateVariable, node.attributes.storageLocation, parent.name, this);
+        variable.isStateVariable = node.attributes.stateVariable;
+        variable.applyType(node.attributes.storageLocation, parent.name, this);
         if (variable.position === null && node.attributes.stateVariable && variable.detail !== null) {
             // TODO:
             // variable.position = this._currentStorageSlot;

@@ -20,10 +20,10 @@ export class VariableProcessor {
         this._contractProcessor = contractProcessor;
     }
 
-    public applyType(stateVariable: boolean, storageLocation: string, parentName: string): void {
+    public applyType(storageLocation: string, parentName: string): void {
         const varType = this._variable.originalType;
 
-        if (stateVariable === true) {
+        if (this._variable.isStateVariable === true) {
             this._variable.location = VariableLocation.Storage;
         }
         else {
