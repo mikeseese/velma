@@ -343,12 +343,6 @@ export class VariableProcessor {
                         // array is static, and therefore initialized upon declaration, we need to fill it out members now
                         for (let j = 0; j < arrays[i].length; j++) {
                             let clone = arrays[i].memberType.clone();
-                            if (j === 0) {
-                                clone.position = 0;
-                            }
-                            else {
-                                clone.position = arrays[i].members[j - 1].position + arrays[i].members[j - 1].memoryLength;
-                            }
                             arrays[i].members.push(clone);
                             if (!(clone instanceof ValueDetail)) {
                                 this._runtime._variableReferenceIds.set(clone.id, clone);
@@ -463,6 +457,9 @@ export class VariableProcessor {
             this.applyStoragePosition(detail);
             if (!detail.isDynamic) {
                 // TODO: do storage for children
+                for (let i = 0; i < detail.members.length; i++) {
+                    this.applyStoragePositions(detail.members[i]);
+                }
             }
             if (detail.position === this._contractProcessor._currentStorageSlot || this._contractProcessor._currentStorageSlotOffset > 0) {
                 // occupy whole slots

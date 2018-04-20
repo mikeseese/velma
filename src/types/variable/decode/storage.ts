@@ -13,7 +13,15 @@ export async function decode(position: number, offset: number, length: number, t
         let key: Buffer = new Buffer(32);
         key[31] = position; // TODO: hackinahack
         const content = await _interface.requestStorage(address, key);
-        value = decodeValue(type, new BN(content.value.slice(offset, length)));
+        let end = content.value.length - offset;
+        let start = end - length;
+        if (start < 0) {
+            start = 0;
+        }
+        if (end < 0) {
+            end = 0;
+        }
+        value = decodeValue(type, new BN(content.value.slice(start, end)));
     }
 
     return value;
