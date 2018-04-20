@@ -57,7 +57,7 @@ export class ContractProcessor {
                 contractProcessor._currentStorageSlot += this._currentStorageSlot; // needed if we have multiple inherited contracts (which would all start at 0 slot)
                 contractProcessor.process();
                 for (let i = 0; i < inheritedContract.stateVariables.length; i++) {
-                    this._contract.stateVariables.push(inheritedContract.stateVariables[i].clone()); // TODO: ?
+                    this._contract.stateVariables.push(inheritedContract.stateVariables[i].clone());
                 }
                 this._currentStorageSlot = contractProcessor._currentStorageSlot;
                 this._currentStorageSlotOffset = contractProcessor._currentStorageSlotOffset;
