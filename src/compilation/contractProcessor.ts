@@ -59,7 +59,7 @@ export class ContractProcessor {
                 for (let i = 0; i < inheritedContract.stateVariables.length; i++) {
                     this._contract.stateVariables.push(inheritedContract.stateVariables[i].clone()); // TODO: ?
                 }
-                this._currentStorageSlot += contractProcessor._currentStorageSlot;
+                this._currentStorageSlot = contractProcessor._currentStorageSlot;
                 this._currentStorageSlotOffset = contractProcessor._currentStorageSlotOffset;
             }
         }
