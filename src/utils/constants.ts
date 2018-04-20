@@ -2,19 +2,23 @@ export namespace LibSdbConstants {
     export const ScopeTypes: {[scope: string]: {name: string, frame: number}} = {
         local: {
             name: "Local Function",
-            frame: 0
+            frame: 1
         },
         state: {
             name: "Contract State",
-            frame: 1
+            frame: 2
         },
         global: {
             name: "VM Global",
-            frame: 2
+            frame: 3
         },
         dev: {
             name: "Dev Variables",
-            frame: 3
+            frame: 4
+        },
+        variableStart: { // NOTE: variableStart must have a frame number larger than other scopes in this type
+            name: "unused",
+            frame: 5
         }
     }
 }
