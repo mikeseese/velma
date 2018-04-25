@@ -233,7 +233,7 @@ export class LibSdbRuntime extends EventEmitter {
                 this.processDeclaration(sourceLocation, contract, data.content.stack);
             }
 
-            const fileId = parseInt(sourceLocation.file);
+            const fileId = sourceLocation.file;
             let file: LibSdbTypes.File;
             if (!isNaN(fileId)) {
                 file = this._filesById.get(fileId)!;

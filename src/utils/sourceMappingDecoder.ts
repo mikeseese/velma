@@ -32,6 +32,7 @@ import { findLowerBound } from "./misc";
  */
 export namespace SourceMappingDecoder {
     // s:l:f:j
+    export type SourceLocation = {start: number, length: number, file: number, jump?: string};
 
     /**
      * Decode the given @arg value
@@ -56,9 +57,9 @@ export namespace SourceMappingDecoder {
      * @param {String} mapping     - compressed source mapping given by solc-bin
      * @return {Array} returns the decompressed source mapping. Array of {start, length, file, jump}
      */
-    export function decompressAll(mapping): any[] {
+    export function decompressAll(mapping): SourceLocation[] {
         let map = mapping.split(';');
-        let ret: any[] = [];
+        let ret: SourceLocation[] = [];
         for (let k in map) {
             let compressed = map[k].split(':');
             let sourceMap = {
@@ -208,7 +209,7 @@ export namespace SourceMappingDecoder {
      * @param {String} mapping     - compressed source mapping given by solc-bin
      * @return {Object} returns the decompressed source mapping for the given index {start, length, file, jump}
      */
-    export function atIndex(index, mapping): any {
+    export function atIndex(index, mapping): SourceLocation {
         let ret: any = {};
         let map = mapping.split(';');
         if (index >= map.length) {
@@ -239,7 +240,7 @@ export namespace SourceMappingDecoder {
         return ret;
     }
 
-    export function toIndex(sourceLocation, mapping): number | null {
+    export function toIndex(sourceLocation: SourceLocation, mapping): number | null {
         let map = mapping.split(';');
         let index: number | null = null;
         let decompressedCurrent: any = {};

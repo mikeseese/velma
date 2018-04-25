@@ -66,48 +66,99 @@ export class LibSdbBreakpoints {
                 const astWalker = new LibSdbUtils.AstWalker();
                 const startPosition = bp.line === 0 ? 0 : file.lineBreaks[bp.line - 1] + 1;
                 const endPosition = file.lineBreaks[bp.line];
-                let sourceLocations: any[] = [];
-                let index: number | null = null;
-                let pc: number | null = null;
                 for (let j = 0; j < file.contracts.length; j++) {
+                    let sourceLocations: LibSdbUtils.SourceMappingDecoder.SourceLocation[] = [];
+                    let index: number | null = null;
+                    let pc: number | null = null;
                     const contract = file.contracts[j];
-                    if (contract.addresses.length > 0) {
-                        astWalker.walk(contract.ast, (node) => {
-                            if (node.src) {
-                                const srcSplit = node.src.split(":");
-                                const pos = parseInt(srcSplit[0]);
-                                if (startPosition <= pos && pos <= endPosition && node.name !== "VariableDeclarationStatement" && node.name !== "VariableDeclaration") {
-                                    sourceLocations.push({
-                                        start: parseInt(srcSplit[0]),
-                                        length: parseInt(srcSplit[1]),
-                                        file: parseInt(srcSplit[2])
-                                    });
+
+                    // get source locations that match the breakpoint
+                    astWalker.walk(contract.ast, (node) => {
+                        if (node.src) {
+                            const srcSplit = node.src.split(":");
+                            const pos = parseInt(srcSplit[0]);
+                            if (startPosition <= pos && pos <= endPosition && node.name !== "VariableDeclarationStatement" && node.name !== "VariableDeclaration") {
+                                sourceLocations.push({
+                                    start: parseInt(srcSplit[0]),
+                                    length: parseInt(srcSplit[1]),
+                                    file: parseInt(srcSplit[2])
+                                });
+                            }
+                        }
+
+                        return true;
+                    });
+
+                    // get smallest program count? that should hypothetically be the first instruction
+                    for (let k = 0; k < sourceLocations.length; k++) {
+                        const sourceLocation = sourceLocations[k];
+                        index = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, contract.srcmapRuntime);
+                        if (index !== null) {
+                            for (const entry of contract.pcMap.entries()) {
+                                if (entry[1] === index) {
+                                    if (pc === null || entry[0] < pc) {
+                                        pc = entry[0];
+                                    }
+                                    break;
                                 }
                             }
+                        }
+                    }
 
-                            return true;
-                        });
-                        // get smallest program count? that should hypothetically be the first instruction
-                        for (let k = 0; k < sourceLocations.length; k++) {
-                            const sourceLocation = sourceLocations[k];
-                            index = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, contract.srcmapRuntime);
-                            if (index !== null) {
-                                for (const entry of contract.pcMap.entries()) {
-                                    if (entry[1] === index) {
-                                        if (pc === null || entry[0] < pc) {
-                                            pc = entry[0];
+                    if (pc !== null) {
+                        // this contract has the breakpoint in it
+                        contract.breakpoints.set(bp.id, pc);
+
+                        // apply the breakpoint to existing instances of this contract
+                        for (let k = 0; k < contract.addresses.length; k++) {
+                            await this._runtime._interface.requestSendBreakpoint(bp.id, contract.addresses[k], pc, true);
+                        }
+
+                        // find contracts that inherit this contract and check their sourcemaps for the breakpoint
+                        for (let k = 0; k < file.contracts.length; k++) {
+                            const childContract = file.contracts[k];
+
+                            if (childContract.inheritedContracts.indexOf(contract) >= 0) {
+                                // this contract inherits the contract with the breakpoint, we need to check sourcemap
+
+                                const childContractSourceMap = LibSdbUtils.SourceMappingDecoder.decompressAll(childContract.srcmapRuntime);
+
+                                for (let l = 0; l < childContractSourceMap.length; l++) {
+                                    let childIndex: number | null = null;
+                                    let childPc: number | null = null;
+                                    const sourceLocation = childContractSourceMap[l];
+
+                                    if (!(startPosition <= sourceLocation.start && sourceLocation.start <= endPosition)) {
+                                        continue;
+                                    }
+
+                                    childIndex = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, childContract.srcmapRuntime);
+                                    if (childIndex !== null) {
+                                        for (const entry of childContract.pcMap.entries()) {
+                                            if (entry[1] === childIndex) {
+                                                if (childPc === null || entry[0] < childPc) {
+                                                    childPc = entry[0];
+                                                }
+                                                break;
+                                            }
                                         }
+                                    }
+
+                                    if (childPc !== null) {
+                                        // this contract has the breakpoint in it
+                                        childContract.breakpoints.set(bp.id, pc);
+
+                                        // apply the breakpoint to existing instances of this contract
+                                        for (let m = 0; m < childContract.addresses.length; m++) {
+                                            await this._runtime._interface.requestSendBreakpoint(bp.id, childContract.addresses[m], childPc, true);
+                                        }
+
                                         break;
                                     }
                                 }
                             }
                         }
-                        if (pc !== null) {
-                            contract.breakpoints.set(bp.id, pc);
-                            for (let k = 0; k < contract.addresses.length; k++) {
-                                await this._runtime._interface.requestSendBreakpoint(bp.id, contract.addresses[k], pc, true);
-                            }
-                        }
+
                         break;
                     }
                 };

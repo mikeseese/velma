@@ -17,6 +17,7 @@ export class Contract {
     stateVariables: Variable[];
     breakpoints: Map<number, number>;
     structDefinitions: Map<string, number>;
+    inheritedContracts: Contract[];
 
     constructor() {
         this.pcMap = new Map<number, number>();
@@ -26,6 +27,7 @@ export class Contract {
         this.addresses = [];
         this.breakpoints = new Map<number, number>();
         this.structDefinitions = new Map<string, number>();
+        this.inheritedContracts = [];
     }
 
     clone(): Contract {
@@ -67,6 +69,10 @@ export class Contract {
 
         for (const v of this.structDefinitions) {
             clone.structDefinitions.set(v[0], v[1]);
+        }
+
+        for (let i = 0; i < this.inheritedContracts.length; i++) {
+            clone.inheritedContracts.push(this.inheritedContracts[i]);
         }
 
         return clone;
