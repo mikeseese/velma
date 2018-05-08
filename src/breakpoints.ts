@@ -95,7 +95,7 @@ export class LibSdbBreakpoints {
                         index = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, contract.srcmapRuntime);
                         if (index !== null) {
                             for (const entry of contract.pcMap.entries()) {
-                                if (entry[1] === index) {
+                                if (entry[1].index === index) {
                                     if (pc === null || entry[0] < pc) {
                                         pc = entry[0];
                                     }
@@ -135,7 +135,7 @@ export class LibSdbBreakpoints {
                                     childIndex = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, childContract.srcmapRuntime);
                                     if (childIndex !== null) {
                                         for (const entry of childContract.pcMap.entries()) {
-                                            if (entry[1] === childIndex) {
+                                            if (entry[1].index === childIndex) {
                                                 if (childPc === null || entry[0] < childPc) {
                                                     childPc = entry[0];
                                                 }

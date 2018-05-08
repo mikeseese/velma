@@ -22,3 +22,20 @@ export class Evaluation {
         return clone;
     }
 }
+
+export class EvaluationRequest {
+    evaluationBytecode: string;
+    evaluationStartPc: number;
+    evaluationEndPc: number;
+
+    runtimeBytecode: string;
+    runtimePc: number;
+
+    constructor(evaluationBytecode: string, evaluationStartPc: number, evaluationEndPc: number, runtimeBytecode: string, runtimePc: number) {
+        this.evaluationBytecode = evaluationBytecode;
+        this.evaluationStartPc = evaluationStartPc;
+        this.evaluationEndPc = evaluationEndPc;
+        this.runtimeBytecode = runtimeBytecode;
+        this.runtimePc = runtimePc;
+    }
+}

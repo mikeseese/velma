@@ -200,7 +200,7 @@ export class LibSdbRuntime extends EventEmitter {
             }
 
             // get line number from pc
-            const index = contract.pcMap.get(pc);
+            const index = contract.pcMap.get(pc)!.index;
             const sourceLocation = LibSdbUtils.SourceMappingDecoder.atIndex(index, contract.srcmapRuntime);
 
             if (data.content.specialEvents.indexOf("fnJumpDestination") >= 0) {
@@ -567,7 +567,7 @@ export class LibSdbRuntime extends EventEmitter {
         if (contract) {
             let indexMap = new Map<number, number>();
             for (const entry of contract.pcMap.entries()) {
-                indexMap.set(entry[1], entry[0]);
+                indexMap.set(entry[1].index, entry[0]);
             }
             const astWalker = new LibSdbUtils.AstWalker();
             astWalker.walk(contract.ast, (node) => {
@@ -603,7 +603,7 @@ export class LibSdbRuntime extends EventEmitter {
         if (contract) {
             let indexMap = new Map<number, number>();
             for (const entry of contract.pcMap.entries()) {
-                indexMap.set(entry[1], entry[0]);
+                indexMap.set(entry[1].index, entry[0]);
             }
             const astWalker = new LibSdbUtils.AstWalker();
             astWalker.walk(contract.ast, (node) => {

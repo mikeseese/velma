@@ -2,6 +2,7 @@ import * as WebSocket from "ws";
 
 import { LibSdbRuntime } from "./runtime";
 import { LibSdbCompilationProcessor } from "./compilation/processor";
+import { LibSdbTypes } from "./types/types";
 
 const uuidv4 = require("uuid").v4;
 
@@ -59,6 +60,61 @@ export class LibSdbInterface {
         if (this.evm !== undefined) {
             this.evm.handleMessage(request);
         }
+    }
+
+    public requestInjectCode(bytecode: string, pc: number): Promise<void> {
+        return new Promise<void>((resolve, reject) => {
+            const msgId = uuidv4();
+
+            let request: any = {
+                "id": msgId,
+                "messageType": "request",
+                "content": {
+                    "type": "injectNewCode",
+                    "code": bytecode,
+                    "pc": pc
+                }
+            };
+
+            this._debuggerMessages.set(msgId, resolve);
+
+            if (this.evm !== undefined) {
+                this.evm.handleMessage(request);
+            }
+        });
+    }
+
+    public requestRuntUntilPc(pc: number): Promise<void> {
+        return new Promise<void>((resolve, reject) => {
+            const msgId = uuidv4();
+
+            let request: any = {
+                "id": msgId,
+                "messageType": "request",
+                "content": {
+                    "type": "runUntilPc",
+                    "pc": pc
+                }
+            };
+
+            this._debuggerMessages.set(msgId, resolve);
+
+            if (this.evm !== undefined) {
+                this.evm.handleMessage(request);
+            }
+        });
+    }
+
+    public async requestEvaluation(evalRequest: LibSdbTypes.EvaluationRequest): Promise<LibSdbTypes.Variable> {
+        await this.requestInjectCode(evalRequest.evaluationBytecode, evalRequest.evaluationStartPc);
+
+        await this.requestRuntUntilPc(evalRequest.evaluationEndPc);
+
+        // TODO: get current state and get return variable
+
+        await this.requestInjectCode(evalRequest.runtimeBytecode, evalRequest.runtimePc);
+
+        return new LibSdbTypes.Variable();
     }
 
     public async requestStorage(address: any, position: any): Promise<any> {

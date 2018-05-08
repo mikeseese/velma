@@ -79,11 +79,7 @@ export class LibSdbCompilationProcessor {
                     sdbContract.name = contractName;
                     sdbContract.sourcePath = absoluteSourcePath;
 
-                    const pcMap = LibSdbUtils.nameOpCodes(new Buffer(contract.evm.deployedBytecode.object, 'hex'))[1];
-                    sdbContract.pcMap.clear();
-                    Object.keys(pcMap).forEach((pc) => {
-                        sdbContract.pcMap.set(parseInt(pc), pcMap[pc]);
-                    });
+                    sdbContract.pcMap = LibSdbUtils.nameOpCodes(new Buffer(contract.evm.deployedBytecode.object, 'hex'));
 
                     if (contract.evm.methodIdentifiers !== undefined) {
                         sdbContract.functionNames.clear();

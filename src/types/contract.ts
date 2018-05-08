@@ -1,5 +1,6 @@
 import { ScopeVariableMap, Ast, VariableMap } from "./misc";
 import { Variable } from "./variable/variable";
+import { LibSdbTypes } from "../types/types";
 
 const CircularJSON = require("circular-json");
 
@@ -7,7 +8,7 @@ export class Contract {
     name: string;
     sourcePath: string;
     addresses: string[];
-    pcMap: Map<number, number>;
+    pcMap: Map<number, LibSdbTypes.EvmInstruction>;
     scopeVariableMap: ScopeVariableMap;
     functionNames: Map<number, string>; // key: pc, value: hash
     bytecode: string;
@@ -20,7 +21,7 @@ export class Contract {
     inheritedContracts: Contract[];
 
     constructor() {
-        this.pcMap = new Map<number, number>();
+        this.pcMap = new Map<number, LibSdbTypes.EvmInstruction>();
         this.scopeVariableMap = new Map<number, VariableMap>();
         this.functionNames = new Map<number, string>();
         this.stateVariables = [];

@@ -12,3 +12,16 @@ export type ContractMap = Map<string, Contract>; // key is address or name
 
 export type FileMap = Map<string, File>; // key is full path/name of file
 export type FileByIdMap = Map<number, File>; // key is full path/name of file
+
+
+export type EvmInstruction = {
+    index: number;
+    opcode: {
+        name: any;
+        fee: any;
+        in: any;
+        out: any;
+        dynamic: any;
+        async: any;
+    };
+};

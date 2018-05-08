@@ -1,7 +1,6 @@
 const parseExpression = require("solidity-parser").parse;
 const traverse = require("traverse");
 const uuidv4 = require("uuid").v4;
-const CircularJSON = require("circular-json");
 
 import { LibSdbTypes } from "./types/types";
 import { LibSdbUtils } from "./utils/utils";
@@ -152,52 +151,11 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
 
         expression = expression + (expression.endsWith(';') ? '' : ';');
         let contract = this._runtime._contractsByAddress.get(this._runtime._stepData.contractAddress)!;
-        let newContract: LibSdbTypes.Contract = contract.clone();
         let file = this._runtime._files.get(contract.sourcePath)!;
         let newFile: LibSdbTypes.File = file.clone();
-        // newFile.sourceCode = newFile.sourceCodeOriginal; // TODO: reset the source to the original source
 
         const functionArgs = this.findArguments(frameId, expression);
         const functionInsert = this.generateFunction(expression, functionArgs);
-
-        let newLineOffsets = new Map<number, number>();
-        file.lineOffsets.forEach((value: number, key: number) => {
-            newLineOffsets.set(key, value);
-        });
-
-        let newBreakpoints: LibSdbTypes.Breakpoint[] = [];
-        for (let i = 0; i < file.breakpoints.length; i++) {
-            let copyValue = new LibSdbTypes.Breakpoint();
-            copyValue.id = file.breakpoints[i].id;
-            copyValue.line = file.breakpoints[i].line;
-            copyValue.verified = file.breakpoints[i].verified;
-            copyValue.visible = file.breakpoints[i].visible;
-            newBreakpoints.push(copyValue);
-        }
-
-        let newCallstack: LibSdbTypes.StackFrame[] = [];
-        for (let i = 0; i < this._runtime._callStack.length; i++) {
-            let copyValue = new LibSdbTypes.StackFrame();
-            copyValue.file = this._runtime._callStack[i].file;
-            copyValue.line = this._runtime._callStack[i].line;
-            copyValue.name = this._runtime._callStack[i].name;
-            newCallstack.push(copyValue);
-        }
-
-        let newPriorUiCallstack: LibSdbTypes.StackFrame[] | null;
-        if (this._runtime._priorUiCallStack === null) {
-            newPriorUiCallstack = null;
-        }
-        else {
-            newPriorUiCallstack = [];
-            for (let i = 0; i < this._runtime._priorUiCallStack.length; i++) {
-                let copyValue = new LibSdbTypes.StackFrame()
-                copyValue.file = this._runtime._priorUiCallStack[i].file;
-                copyValue.line = this._runtime._priorUiCallStack[i].line;
-                copyValue.name = this._runtime._priorUiCallStack[i].name;
-                newPriorUiCallstack.push(copyValue);
-            }
-        }
 
         if (this._runtime._stepData !== null && this._runtime._stepData.location !== null && this._runtime._stepData.location.start !== null) {
             const currentLine = this._runtime._stepData.location.start.line;
@@ -206,14 +164,6 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
 
                 newFile.sourceCode = [newFile.sourceCode.slice(0, insertPosition), functionInsert.reference + "\n", newFile.sourceCode.slice(insertPosition)].join('');
                 newFile.lineBreaks = LibSdbUtils.SourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
-
-                // Adjust line numbers
-                LibSdbUtils.addLineOffset(currentLine, 1, newLineOffsets);
-                LibSdbUtils.adjustBreakpointLineNumbers(newBreakpoints, newContract.sourcePath, currentLine, 1);
-                LibSdbUtils.adjustCallstackLineNumbers(newCallstack, newContract.sourcePath, currentLine, 1);
-                if (newPriorUiCallstack !== null) {
-                    LibSdbUtils.adjustCallstackLineNumbers(newPriorUiCallstack, newContract.sourcePath, currentLine, 1);
-                }
 
                 const contractDeclarationPosition = newFile.sourceCode.indexOf("contract " + contract.name);
                 let functionInsertPosition: number | null = null;
@@ -229,15 +179,6 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                 if (functionInsertPosition !== null && functionInsertLine !== null) {
                     newFile.sourceCode = [newFile.sourceCode.slice(0, functionInsertPosition), functionInsert.code, newFile.sourceCode.slice(functionInsertPosition)].join('');
                     newFile.lineBreaks = LibSdbUtils.SourceMappingDecoder.getLinebreakPositions(newFile.sourceCode);
-
-                    // Adjust line numbers
-                    const numNewLines = (functionInsert.code.match(/\n/g) || []).length;
-                    LibSdbUtils.addLineOffset(functionInsertLine, numNewLines, newLineOffsets);
-                    LibSdbUtils.adjustBreakpointLineNumbers(newBreakpoints, newContract.sourcePath, functionInsertLine, numNewLines);
-                    LibSdbUtils.adjustCallstackLineNumbers(newCallstack, newContract.sourcePath, functionInsertLine, numNewLines);
-                    if (newPriorUiCallstack !== null) {
-                        LibSdbUtils.adjustCallstackLineNumbers(newPriorUiCallstack, newContract.sourcePath, functionInsertLine, numNewLines);
-                    }
 
                     let compileInput: CompilerInput = {
                         language: "Solidity",
@@ -260,9 +201,12 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         },
                         sources: {}
                     };
+
                     compileInput.sources = this.generateCompilerInputSourcesForContract(contract);
                     compileInput.sources[newFile.relativePath()] = { content: newFile.sourceCode };
+
                     let result: CompilerOutput = JSON.parse(compileStandardWrapper(JSON.stringify(compileInput)));
+
                     let returnTypeString: string = "bool";
                     if (result.errors !== undefined) {
                         for (let i = 0; i < result.errors.length; i++) {
@@ -298,27 +242,14 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                         return;
                     }
 
-                    this._runtime._callStack = newCallstack;
-                    this._runtime._priorUiCallStack = newPriorUiCallstack;
-
-                    newFile.breakpoints = newBreakpoints;
-                    newFile.lineOffsets = newLineOffsets;
-
-                    this._runtime._files.set(newFile.fullPath(), newFile);
-                    this._runtime._contractsByAddress.set(this._runtime._stepData.contractAddress, newContract);
-
-                    const compilationProcessor = new LibSdbCompilationProcessor();
-                    compilationProcessor.linkCompilerOutput(newFile.sourceRoot, result);
-                    compilationProcessor.linkContractAddress(newContract.name, this._runtime._stepData.contractAddress);
-                    newContract = this._runtime._contractsByAddress.get(this._runtime._stepData.contractAddress)!;
+                    const evaluationBytecode = result.contracts[newFile.relativePath()][contract.name].evm.deployedBytecode!;
+                    const evaluationAst = result.sources ? result.sources[newFile.relativePath()].legacyAST : {}; // TODO: ?
+                    const newPcMap = LibSdbUtils.nameOpCodes(new Buffer(evaluationBytecode.object, 'hex'));
 
                     const astWalker = new LibSdbUtils.AstWalker();
 
-                    const codeOffset = functionInsert.code.length + functionInsert.reference.length + 1; // 1 is for the \n after the reference insertion
-
-                    let sourceLocationEvalFunction = null;
-                    //let returnVariable: Variable | null = null;
-                    astWalker.walk(newContract.ast, (node) => {
+                    let sourceLocationEvalFunction: LibSdbUtils.SourceMappingDecoder.SourceLocation | null = null;
+                    astWalker.walk(evaluationAst, (node) => {
                         if (sourceLocationEvalFunction !== null) {
                             return false;
                         }
@@ -341,60 +272,39 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
                     });
 
                     if (sourceLocationEvalFunction !== null) {
-                        const newIndex = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocationEvalFunction, newContract.srcmapRuntime);
-                        let newPc: number | null = null;
-                        for (let map of newContract.pcMap) {
-                            if (map[1] === newIndex) {
-                                newPc = map[0];
-                                break;
+                        const newIndex = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocationEvalFunction!, evaluationBytecode.sourceMap!);
+                        let newStartPc: number | null = null;
+                        let newEndPc: number | null = null;
+                        for (let map of newPcMap) {
+                            if (map[1].index === newIndex) {
+                                newStartPc = map[0];
+                            }
+
+                            if (map[1].opcode.name === "JUMPDEST" && (newEndPc === null || map[0] > newEndPc!)) {
+                                const sourceLocation = LibSdbUtils.SourceMappingDecoder.atIndex(map[1].index, evaluationBytecode.sourceMap!);
+                                if (sourceLocationEvalFunction!.start <= sourceLocation.start && (sourceLocation.start + sourceLocation.length) <= (sourceLocationEvalFunction!.start + sourceLocationEvalFunction!.length)) {
+                                    newEndPc = map[0];
+                                }
                             }
                         }
 
-                        let newSourceLocation = CircularJSON.parse(CircularJSON.stringify(this._runtime._stepData.source));
-                        newSourceLocation.start += codeOffset;
-                        let newLine: number | null = null;
-                        for (let i = 0; i < newFile.lineBreaks.length; i++) {
-                            if (i === 0 && newSourceLocation.start < newFile.lineBreaks[i]) {
-                                newLine = i;
-                                break;
-                            }
-                            else if (i > 0 && newFile.lineBreaks[i - 1] < newSourceLocation.start && newSourceLocation.start < newFile.lineBreaks[i]) {
-                                newLine = i;
-                                break;
-                            }
-                        };
-
-                        if (newLine !== null) {
-                            this._runtime._breakpoints.setBreakpoint(newContract.sourcePath, newLine, false, false);
-                        }
-                        else {
-                            // TODO: handles this better
-                            console.log("ERROR: We could not find the line of after we're evaluating...but we're going to execute anyway? shrug");
-                        }
+                        // find last jumpdest thats within the source location
 
                         this._runtime._ongoingEvaluation = new LibSdbTypes.Evaluation();
                         this._runtime._ongoingEvaluation.functionName = functionInsert.name;
                         this._runtime._ongoingEvaluation.callback = callback;
                         this._runtime._ongoingEvaluation.returnVariable.originalType = returnTypeString;
-                        // TODO: potential error with runtime variable reference map!!! create new one?
-                        const contractProcessor = new ContractProcessor(compilationProcessor, newContract);
+                        // TODO: handle referenceVars in result?
+                        const compilationProcessor = new LibSdbCompilationProcessor();
+                        const contractProcessor = new ContractProcessor(compilationProcessor, contract);
                         this._runtime._ongoingEvaluation.returnVariable.applyType("default", "ParameterList", contractProcessor);
                         this._runtime._ongoingEvaluation.contractAddress = this._runtime._stepData.contractAddress;
 
-                        // push the code
-                        for (let i = 0; i < newContract.addresses.length; i++) {
-                            await this._runtime.sendVariableDeclarations(newContract.addresses[i]);
-                            await this._runtime.sendFunctionJumpDestinations(newContract.addresses[i]);
+                        //this._runtime.continue(false, "stopOnEvalBreakpoint");
+                        if (newStartPc !== null && newEndPc !== null) {
+                            const evalRequest = new LibSdbTypes.EvaluationRequest(evaluationBytecode.object, newStartPc, newEndPc, contract.runtimeBytecode, this._runtime._stepData.vmData.pc);
+                            await this._runtime._interface.requestEvaluation(evalRequest);
                         }
-                        this._runtime.continue(false, "stopOnEvalBreakpoint");
-                        const content = {
-                            "type": "injectNewCode",
-                            "address": this._runtime._stepData.contractAddress,
-                            "code": newContract.runtimeBytecode,
-                            "pc": newPc,
-                            "stepId": this._runtime._stepData.debuggerMessageId
-                        };
-                        this._runtime._interface.requestContent(content);
                     }
                     else {
                         callback("Error: Couldn't find the sourceLocation of the evaluation function; that's weird.")

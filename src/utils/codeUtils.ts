@@ -26,29 +26,24 @@
  */
 
 import { getOpcode } from "./opcodes";
+import { LibSdbTypes } from "../types/types";
 
-export function nameOpCodes(raw: Buffer) {
-    let pushData: Buffer = new Buffer('');
-    let codeMap = {};
-    let code: any[] = [];
+export function nameOpCodes(raw: Buffer): Map<number, LibSdbTypes.EvmInstruction> {
+    let result = new Map<number, LibSdbTypes.EvmInstruction>();
 
     for (let i = 0; i < raw.length; i++) {
         let pc = i;
-        let curOpCode = getOpcode(raw[pc], false).name;
-        codeMap[i] = code.length;
+        let curOpCode = getOpcode(raw[pc], false);
         // no destinations into the middle of PUSH
-        if (curOpCode.slice(0, 4) === 'PUSH') {
+        if (curOpCode.name.slice(0, 4) === 'PUSH') {
             let jumpNum = raw[pc] - 0x5f;
-            pushData = raw.slice(pc + 1, pc + jumpNum + 1);
             i += jumpNum;
         }
 
-        let data = pushData.toString('hex') !== '' ? ' ' + pushData.toString('hex') : '';
-
-        code.push(pad(pc, roundLog(raw.length, 10)) + ' ' + curOpCode + data);
-        pushData = new Buffer('');
+        result.set(pc, <LibSdbTypes.EvmInstruction> {index: result.size, opcode: curOpCode})
     }
-    return [ code, codeMap ];
+
+    return result;
 }
 
 export function pad(num, size) {
