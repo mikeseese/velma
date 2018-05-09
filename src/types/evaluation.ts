@@ -4,7 +4,6 @@ export class Evaluation {
     functionName: string;
     returnVariable: Variable;
     contractAddress: string;
-    callback: Function;
 
     constructor() {
         this.returnVariable = new Variable();
@@ -16,8 +15,6 @@ export class Evaluation {
         clone.functionName = this.functionName;
 
         clone.contractAddress = this.contractAddress;
-
-        clone.callback = this.callback;
 
         return clone;
     }

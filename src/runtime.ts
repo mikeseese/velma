@@ -8,6 +8,7 @@ import { LibSdbBreakpoints } from "./breakpoints";
 import { LibSdbEvaluator } from "./evaluator";
 import { ValueDetail } from "./types/barrel";
 import { LibSdbConstants } from "./utils/constants";
+import { BN } from "bn.js";
 
 const CircularJSON = require("circular-json");
 
@@ -22,8 +23,6 @@ export class LibSdbRuntime extends EventEmitter {
 
     public _callStack: LibSdbTypes.StackFrame[];
     public _priorUiCallStack: LibSdbTypes.StackFrame[] | null;
-
-    public _ongoingEvaluation: LibSdbTypes.Evaluation | null;
 
     public _files: LibSdbTypes.FileMap;
     public _filesById: LibSdbTypes.FileByIdMap;
@@ -58,8 +57,6 @@ export class LibSdbRuntime extends EventEmitter {
 
         this._callStack = [];
         this._priorUiCallStack = [];
-
-        this._ongoingEvaluation = null;
     }
 
     public static instance(): LibSdbRuntime {
@@ -113,30 +110,6 @@ export class LibSdbRuntime extends EventEmitter {
 
     private async processJumpOut(contract: LibSdbTypes.Contract, stack: any, memory: any): Promise<void> {
         // jump out, we should be at a JUMPDEST currently
-
-        if (this._priorStepData) {
-            const node = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
-            if (node !== null) {
-                const functionName = node.attributes.name;
-                if (this._ongoingEvaluation !== null && this._ongoingEvaluation.functionName === functionName) {
-                    // get variable at top of stack
-                    // TODO: add support for multiple variable evaluations
-
-                    this._ongoingEvaluation.returnVariable.position = stack.length - 1;
-
-                    let returnValue;
-                    if (this._ongoingEvaluation.returnVariable.detail === null) {
-                        returnValue = null;
-                    }
-                    else {
-                        returnValue = await this._ongoingEvaluation.returnVariable.detail.decode(stack, memory, this._interface, this._ongoingEvaluation.contractAddress);
-                    }
-                    this._ongoingEvaluation.callback(returnValue);
-
-                    this._ongoingEvaluation = null;
-                }
-            }
-        }
 
         this._callStack.shift();
     }
@@ -257,7 +230,12 @@ export class LibSdbRuntime extends EventEmitter {
             this._stepData.source = sourceLocation;
             this._stepData.location = currentLocation;
             this._stepData.contractAddress = address;
-            this._stepData.vmData = data.content;
+            this._stepData.vmData = CircularJSON.parse(CircularJSON.stringify(data.content)); // make a deep copy TODO: make this better
+            this._stepData.vmData.gasLeft = new BN(data.content.gasLeft);
+            this._stepData.vmData.stack = [];
+            for (let i = 0; i < data.content.stack.length; i++) {
+                this._stepData.vmData.stack.push(new BN(data.content.stack[i]));
+            }
             this._stepData.scope = currentScope;
             this._stepData.events = data.content.specialEvents;
             if (data.exceptionError !== undefined) {

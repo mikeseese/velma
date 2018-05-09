@@ -144,11 +144,6 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
             return;
         }
 
-        if (this._runtime._ongoingEvaluation !== null) {
-            // TODO: improve this
-            return;
-        }
-
         expression = expression + (expression.endsWith(';') ? '' : ';');
         let contract = this._runtime._contractsByAddress.get(this._runtime._stepData.contractAddress)!;
         let file = this._runtime._files.get(contract.sourcePath)!;
@@ -290,20 +285,30 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
 
                         // find last jumpdest thats within the source location
 
-                        this._runtime._ongoingEvaluation = new LibSdbTypes.Evaluation();
-                        this._runtime._ongoingEvaluation.functionName = functionInsert.name;
-                        this._runtime._ongoingEvaluation.callback = callback;
-                        this._runtime._ongoingEvaluation.returnVariable.originalType = returnTypeString;
+                        let ongoingEvaluation = new LibSdbTypes.Evaluation();
+                        ongoingEvaluation.functionName = functionInsert.name;
+                        ongoingEvaluation.returnVariable.originalType = returnTypeString;
                         // TODO: handle referenceVars in result?
                         const compilationProcessor = new LibSdbCompilationProcessor();
                         const contractProcessor = new ContractProcessor(compilationProcessor, contract);
-                        this._runtime._ongoingEvaluation.returnVariable.applyType("default", "ParameterList", contractProcessor);
-                        this._runtime._ongoingEvaluation.contractAddress = this._runtime._stepData.contractAddress;
+                        ongoingEvaluation.returnVariable.applyType("default", "ParameterList", contractProcessor);
+                        ongoingEvaluation.contractAddress = this._runtime._stepData.contractAddress;
 
                         //this._runtime.continue(false, "stopOnEvalBreakpoint");
                         if (newStartPc !== null && newEndPc !== null) {
                             const evalRequest = new LibSdbTypes.EvaluationRequest(evaluationBytecode.object, newStartPc, newEndPc, contract.runtimeBytecode, this._runtime._stepData.vmData.pc);
-                            await this._runtime._interface.requestEvaluation(evalRequest);
+                            const vmData = await this._runtime._interface.requestEvaluation(evalRequest);
+
+                            ongoingEvaluation.returnVariable.position = vmData.stack.length - 1;
+        
+                            let returnValue;
+                            if (ongoingEvaluation.returnVariable.detail === null) {
+                                returnValue = null;
+                            }
+                            else {
+                                returnValue = await ongoingEvaluation.returnVariable.detail.decode(vmData.stack, vmData.memory, this._runtime._interface, ongoingEvaluation.contractAddress);
+                            }
+                            callback(returnValue);
                         }
                     }
                     else {

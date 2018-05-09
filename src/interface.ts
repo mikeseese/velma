@@ -62,7 +62,7 @@ export class LibSdbInterface {
         }
     }
 
-    public requestInjectCode(bytecode: string, pc: number): Promise<void> {
+    public requestInjectCode(bytecode: string, pc: number, vmData: any = undefined): Promise<void> {
         return new Promise<void>((resolve, reject) => {
             const msgId = uuidv4();
 
@@ -76,6 +76,14 @@ export class LibSdbInterface {
                 }
             };
 
+            if (vmData !== undefined) {
+                request.content.state = {
+                    "stack": vmData.stack,
+                    "memory": vmData.memory,
+                    "gasLeft": vmData.gasLeft
+                }
+            }
+
             this._debuggerMessages.set(msgId, resolve);
 
             if (this.evm !== undefined) {
@@ -84,7 +92,7 @@ export class LibSdbInterface {
         });
     }
 
-    public requestRuntUntilPc(pc: number): Promise<void> {
+    public requestRunUntilPc(pc: number): Promise<any> {
         return new Promise<void>((resolve, reject) => {
             const msgId = uuidv4();
 
@@ -93,10 +101,12 @@ export class LibSdbInterface {
                 "messageType": "request",
                 "content": {
                     "type": "runUntilPc",
+                    "stepId": this._runtime._stepData!.debuggerMessageId,
                     "pc": pc
                 }
             };
 
+            this._debuggerMessages.delete(this._runtime._stepData!.debuggerMessageId);
             this._debuggerMessages.set(msgId, resolve);
 
             if (this.evm !== undefined) {
@@ -105,16 +115,14 @@ export class LibSdbInterface {
         });
     }
 
-    public async requestEvaluation(evalRequest: LibSdbTypes.EvaluationRequest): Promise<LibSdbTypes.Variable> {
+    public async requestEvaluation(evalRequest: LibSdbTypes.EvaluationRequest): Promise<any> {
         await this.requestInjectCode(evalRequest.evaluationBytecode, evalRequest.evaluationStartPc);
 
-        await this.requestRuntUntilPc(evalRequest.evaluationEndPc);
+        const vmData = await this.requestRunUntilPc(evalRequest.evaluationEndPc);
 
-        // TODO: get current state and get return variable
+        await this.requestInjectCode(evalRequest.runtimeBytecode, evalRequest.runtimePc, this._runtime._stepData!.vmData);
 
-        await this.requestInjectCode(evalRequest.runtimeBytecode, evalRequest.runtimePc);
-
-        return new LibSdbTypes.Variable();
+        return vmData;
     }
 
     public async requestStorage(address: any, position: any): Promise<any> {
@@ -384,6 +392,14 @@ export class LibSdbInterface {
                 debuggerMessage(data.content);
             }
             this._debuggerMessages.delete(data.id);
+
+            if (triggerType === "runUntilPc") {
+                // the step data id gets modified due to changes in sdbhook
+                this._runtime._stepData!.debuggerMessageId = data.id;
+                this._debuggerMessages.set(data.id, (message) => {
+                    this.evm.handleMessage(message);
+                });
+            }
         }
     }
 
