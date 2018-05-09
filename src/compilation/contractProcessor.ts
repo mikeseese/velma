@@ -40,6 +40,7 @@ export class ContractProcessor {
             //   are determined before we start using it in variable type definition
             this.processContractChildType("InheritanceSpecifier");
             this.processContractChildType("UsingForDirective");
+            this.processContractChildType("EnumDefinition");
             this.processContractChildType("StructDefinition");
             this.processContractChildType("VariableDeclaration");
             this.processContractChildType("FunctionDefinition");
@@ -79,22 +80,32 @@ export class ContractProcessor {
 
     private processContractStruct(node: any) {
         // save the scope that the struct is defined at
-        this._contract.structDefinitions.set(node.attributes.name, node.id);
+        let structDefinition: LibSdbTypes.VariableMap = new Map<string, LibSdbTypes.Variable>();
+
         const astWalker = new LibSdbUtils.AstWalker();
         astWalker.walkDetail(node, null, 0, (node, parent, depth) => {
             if (node.id) {
                 if (node.name === "VariableDeclaration") {
                     const variable = this.createVariableFromAst(node, parent, depth, null);
-                    // add the variable to the parent's scope
-                    if (!this._contract.scopeVariableMap.has(variable.scope.id)) {
-                        this._contract.scopeVariableMap.set(variable.scope.id, new Map<string, LibSdbTypes.Variable>());
-                    }
-                    this._contract.scopeVariableMap.get(variable.scope.id)!.set(variable.name, variable);
+                    structDefinition.set(variable.name, variable);
                 }
             }
 
             return true;
         });
+
+        this._contract.structDefinitions.set(node.attributes.name, structDefinition);
+    }
+
+    private processContractEnum(node: any) {
+        // save the scope that the enum is defined at
+        let enumDefintion = new LibSdbTypes.EnumDefinition(node.attributes.name);
+
+        for (let i = 0; i < node.children.length; i++) {
+            enumDefintion.values.push(node.children[i].attributes.name);
+        }
+
+        this._contract.enumDefinitions.set(enumDefintion.name, enumDefintion);
     }
 
     private processContractFunction(node: any) {
@@ -143,6 +154,10 @@ export class ContractProcessor {
                     }
                     case "StructDefinition": {
                         this.processContractStruct(node);
+                        break;
+                    }
+                    case "EnumDefinition": {
+                        this.processContractEnum(node);
                         break;
                     }
                     case "FunctionDefinition": {

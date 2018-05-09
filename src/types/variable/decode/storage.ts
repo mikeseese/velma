@@ -1,9 +1,9 @@
 import { LibSdbInterface } from "../../../interface";
-import { VariableType } from "../variable";
+import { LibSdbTypes } from "../../types";
 import { decode as decodeValue } from "./value";
 import { BN } from "bn.js";
 
-export async function decode(position: number, offset: number, length: number, type: VariableType, _interface: LibSdbInterface, address: string): Promise<string> {
+export async function decode(position: number, offset: number, length: number, detail: LibSdbTypes.ValueDetail | LibSdbTypes.EnumDetail, _interface: LibSdbInterface, address: string): Promise<string> {
     let value = "";
 
     if (position === null) {
@@ -21,7 +21,7 @@ export async function decode(position: number, offset: number, length: number, t
         if (end < 0) {
             end = 0;
         }
-        value = decodeValue(type, new BN(content.value.slice(start, end)));
+        value = decodeValue(detail, new BN(content.value.slice(start, end)));
     }
 
     return value;

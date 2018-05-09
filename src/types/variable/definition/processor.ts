@@ -1,5 +1,6 @@
 import { Variable, VariableLocation, VariableType } from "../variable";
 import { ValueDetail } from "../detail/value";
+import { EnumDetail } from "../detail/enum";
 import { ArrayDetail } from "../detail/array";
 import { StructDetail } from "../detail/struct";
 import { MappingDetail } from "../detail/mapping";
@@ -239,22 +240,19 @@ export class VariableProcessor {
 
             const contract = this._runtime._contractsByName.get(structContractName);
             if (contract) {
-                const structDefinitionScopeId = contract.structDefinitions.get(structName);
-                if (structDefinitionScopeId !== undefined) {
-                    const structVariables = contract.scopeVariableMap.get(structDefinitionScopeId);
-                    if (structVariables !== undefined) {
-                        // fill out leaf members?
-                        for (const structVariable of structVariables) {
-                            let variable = structVariable[1].clone();
-                            variable.location = leaf.location;
-                            if (variable.detail !== null) {
-                                variable.detail.variable = leaf.variable;
-                            }
-                            leaf.members.push({
-                                name: variable.name,
-                                detail: variable.detail
-                            });
+                const structVariables = contract.structDefinitions.get(structName);
+                if (structVariables !== undefined) {
+                    // fill out leaf members?
+                    for (const structVariable of structVariables) {
+                        let variable = structVariable[1].clone();
+                        variable.location = leaf.location;
+                        if (variable.detail !== null) {
+                            variable.detail.variable = leaf.variable;
                         }
+                        leaf.members.push({
+                            name: variable.name,
+                            detail: variable.detail
+                        });
                     }
                 }
             }
@@ -279,6 +277,30 @@ export class VariableProcessor {
 
             leaf = new ContractDetail(this._variable);
             leaf.name = match[1];
+        }
+        else if ((match = /^enum ([\S]+)\.([^\r\n\t\f\v \[]+)/g.exec(typeName)) !== null || (match = /^enum/g.exec(typeName)) !== null) {
+            remainderTypeName = typeName.substr(match.index + match[0].length);
+            // last leaf is an enum
+            leaf = new EnumDetail(this._variable);
+
+            if (leaf instanceof EnumDetail) {
+                const enumContractName = match[1];
+                const enumName = match[2];
+
+                const contract = this._runtime._contractsByName.get(enumContractName);
+                if (contract) {
+                    const enumDefinition = contract.enumDefinitions.get(enumName);
+                    if (enumDefinition !== undefined) {
+                        leaf.definition = enumDefinition;
+
+                        const numValues = leaf.definition.values.length;
+                        // numValues <= 2^n - 1
+                        // numValues + 1 <= 2^n
+                        // log(numValues + 1) <= n (n is bits)
+                        leaf.storageLength = Math.ceil(Math.log2(numValues + 1) / 8);
+                    }
+                }
+            }
         }
         else {
             // unsupported leaf? as of now, this will get thrown (in the else of the below statement)

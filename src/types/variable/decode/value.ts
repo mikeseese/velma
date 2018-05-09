@@ -1,26 +1,26 @@
-import { VariableType } from "../variable";
 import { BN } from "bn.js";
+import { LibSdbTypes } from "../../types";
 
-export function decode(variableType: VariableType, value: BN) {
+export function decode(detail: LibSdbTypes.ValueDetail | LibSdbTypes.EnumDetail, value: BN) {
     let v: string = "";
     //let num;
-    switch (variableType) {
-        case VariableType.Boolean:
+    switch (detail.type) {
+        case LibSdbTypes.VariableType.Boolean:
             v = value.eqn(1) ? "true" : "false";
             break;
-        case VariableType.UnsignedInteger:
+        case LibSdbTypes.VariableType.UnsignedInteger:
             v = value.toString();
             break;
-        case VariableType.Integer:
+        case LibSdbTypes.VariableType.Integer:
             v = value.fromTwos(256).toString();
             break;
-        case VariableType.FixedPoint:
+        case LibSdbTypes.VariableType.FixedPoint:
             // not supported yet in Solidity (2/21/2018) per solidity.readthedocs.io
             break;
-        case VariableType.Address:
+        case LibSdbTypes.VariableType.Address:
             v = "0x" + value.toString(16);
             break;
-        case VariableType.FixedByteArray:
+        case LibSdbTypes.VariableType.FixedByteArray:
             const byteArrayStr = value.toString(16).match(/.{2}/g);
             let byteArray: number[];
             if (byteArrayStr !== null) {
@@ -33,13 +33,22 @@ export function decode(variableType: VariableType, value: BN) {
             }
             v = JSON.stringify(byteArray);
             break;
-        case VariableType.Enum:
+        case LibSdbTypes.VariableType.Enum:
+            if (detail instanceof LibSdbTypes.EnumDetail) {
+                // really should be the case all the time
+                const index = Math.floor(value.toNumber());
+                if (index < detail.definition.values.length) {
+                    v = detail.definition.values[index];
+                }
+                else {
+                    v = "(invalid enum value) " + value.toString();
+                }
+            }
+            break;
+        case LibSdbTypes.VariableType.Function:
             // TODO:
             break;
-        case VariableType.Function:
-            // TODO:
-            break;
-        case VariableType.None:
+        case LibSdbTypes.VariableType.None:
         default:
             v = "";
             break;

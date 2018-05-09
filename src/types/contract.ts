@@ -17,7 +17,8 @@ export class Contract {
     ast: Ast;
     stateVariables: Variable[];
     breakpoints: Map<number, number>;
-    structDefinitions: Map<string, number>;
+    structDefinitions: Map<string, LibSdbTypes.VariableMap>;
+    enumDefinitions: Map<string, LibSdbTypes.EnumDefinition>;
     inheritedContracts: Contract[];
 
     constructor() {
@@ -27,7 +28,8 @@ export class Contract {
         this.stateVariables = [];
         this.addresses = [];
         this.breakpoints = new Map<number, number>();
-        this.structDefinitions = new Map<string, number>();
+        this.structDefinitions = new Map<string, Map<string, Variable>>();
+        this.enumDefinitions = new Map<string, LibSdbTypes.EnumDefinition>();
         this.inheritedContracts = [];
     }
 
@@ -69,7 +71,17 @@ export class Contract {
         }
 
         for (const v of this.structDefinitions) {
-            clone.structDefinitions.set(v[0], v[1]);
+            let definitionClone: LibSdbTypes.VariableMap = new Map<string, Variable>();
+
+            for (const v2 of v[1]) {
+                definitionClone.set(v2[0], v2[1].clone());
+            }
+
+            clone.structDefinitions.set(v[0], definitionClone);
+        }
+
+        for (const v of this.enumDefinitions) {
+            clone.enumDefinitions.set(v[0], v[1].clone());
         }
 
         for (let i = 0; i < this.inheritedContracts.length; i++) {

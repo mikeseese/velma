@@ -1,4 +1,4 @@
-import { ValueDetail, ArrayDetail, StructDetail, MappingDetail, ContractDetail } from "./barrel";
+import { ValueDetail, ArrayDetail, StructDetail, MappingDetail, ContractDetail, EnumDetail } from "./barrel";
 
 export * from "./astScope";
 export * from "./breakpoint";
@@ -11,8 +11,11 @@ export * from "./stackFrame";
 export * from "./stepData";
 export * from "./variable/variable";
 export * from "./variable/detail/value";
+export * from "./variable/detail/enum";
 export * from "./variable/detail/array";
 export * from "./variable/detail/struct";
 export * from "./variable/detail/mapping";
 export * from "./variable/detail/contract";
-export type VariableDetailType = ValueDetail | ArrayDetail | StructDetail | MappingDetail | ContractDetail;
+export * from "./enum";
+
+export type VariableDetailType = ValueDetail | EnumDetail | ArrayDetail | StructDetail | MappingDetail | ContractDetail;

@@ -1,4 +1,6 @@
-import { Variable, VariableType, DecodedVariable, VariableLocation, VariableTypeToString } from "../variable";
+import { ValueDetail } from "./value";
+import { EnumDefinition } from "../../enum";
+import { Variable, DecodedVariable, VariableLocation, VariableType, VariableTypeToString } from "../variable";
 import { LibSdbInterface } from "../../../interface";
 import { BN } from "bn.js";
 
@@ -6,25 +8,21 @@ import { decode as decodeStack } from "../decode/stack";
 import { decode as decodeMemory } from "../decode/memory";
 import { decode as decodeStorage } from "../decode/storage";
 
-export class ValueDetail {
-    variable: Variable;
-    position: number; // either the relative slot number or relative position in stack/memory
-    offset: number | null; // used for storage locations
-    type: VariableType;
-    storageLength: number;
-    memoryLength: number;
+export class EnumDetail extends ValueDetail {
+    public definition: EnumDefinition;
 
     constructor(variable: Variable) {
-        this.variable = variable;
-        this.memoryLength = 32;
+        super(variable);
+
+        this.type = VariableType.Enum;
     }
 
     getStorageUsed(): number {
-        return this.storageLength;
+        return super.getStorageUsed();
     }
 
-    clone(variable: Variable = this.variable): ValueDetail {
-        let clone = new ValueDetail(variable);
+    clone(variable: Variable = this.variable): EnumDetail {
+        let clone = new EnumDetail(this.variable);
 
         clone.position = this.position;
 
@@ -35,6 +33,8 @@ export class ValueDetail {
         clone.storageLength = this.storageLength;
 
         clone.memoryLength = this.memoryLength;
+
+        clone.definition = this.definition.clone();
 
         return clone;
     }

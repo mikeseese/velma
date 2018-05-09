@@ -1,8 +1,8 @@
-import { VariableType } from "../variable";
+import { LibSdbTypes } from "../../types";
 import { decode as decodeValue } from "./value";
 import { BN } from "bn.js";
 
-export function decode(stackPosition: number, memoryOffset: number, type: VariableType, stack: BN[], memory: (number | null)[]): string {
+export function decode(stackPosition: number, memoryOffset: number, detail: LibSdbTypes.ValueDetail | LibSdbTypes.EnumDetail, stack: BN[], memory: (number | null)[]): string {
     let v = "";
 
     if (stackPosition !== null && stack.length > stackPosition) {
@@ -23,7 +23,7 @@ export function decode(stackPosition: number, memoryOffset: number, type: Variab
             }
         }).join("");
         if (element) {
-            v = decodeValue(type, new BN(element, 16));
+            v = decodeValue(detail, new BN(element, 16));
         }
     }
 

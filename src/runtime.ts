@@ -167,90 +167,91 @@ export class LibSdbRuntime extends EventEmitter {
         else {
             const contract = this._contractsByAddress.get(address);
 
-            if (!contract) {
-                this.respondToDebugHook("skipEvent");
-                return;
-            }
-
-            // get line number from pc
-            const index = contract.pcMap.get(pc)!.index;
-            const sourceLocation = LibSdbUtils.SourceMappingDecoder.atIndex(index, contract.srcmapRuntime);
-
-            if (data.content.specialEvents.indexOf("fnJumpDestination") >= 0) {
-                this.processJumpIn(sourceLocation, contract, data.content.stack, true);
-            }
-            else if (data.content.specialEvents.indexOf("jump") >= 0) {
-                let processedJump: boolean = false;
-                if (this._priorStepData && this._priorStepData.source) {
-                    if (this._priorStepData.source.jump === "i") {
-                        this.processJumpIn(sourceLocation, contract, data.content.stack);
-                        processedJump = true;
-                    }
-                    else if (this._priorStepData.source.jump === "o") {
-                        await this.processJumpOut(contract, data.content.stack, data.content.memory);
-                        processedJump = true;
-                    }
-                }
-
-                if (!processedJump && pc in contract.functionNames) {
-                    // jump in to external function
-                    // this is the JUMPDEST of a function we just entered
-                    let frame = new LibSdbTypes.StackFrame();
-                    frame.name = contract.functionNames[pc];
-                    frame.file = contract.sourcePath;
-                    frame.line = 0 //currentLocation.start === null ? null : currentLocation.start.line;
-                    this._callStack.unshift(frame);
-                }
-            }
-            else if (data.content.specialEvents.indexOf("declaration") >= 0) {
-                this.processDeclaration(sourceLocation, contract, data.content.stack);
-            }
-
-            const fileId = sourceLocation.file;
-            let file: LibSdbTypes.File;
-            if (!isNaN(fileId)) {
-                file = this._filesById.get(fileId)!;
-            }
-            else {
-                file = this._files.get(contract.sourcePath)!;
-            }
-
-            // find current scope
-            const currentScope = LibSdbUtils.findScope(sourceLocation.start, contract.ast);
-
-            let currentLocation = {
-                start: null
-            };
-            if (file) {
-                currentLocation = LibSdbUtils.SourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, file.lineBreaks);
-            }
-
             this._stepData = new LibSdbTypes.StepData();
             this._stepData.debuggerMessageId = data.id;
-            this._stepData.source = sourceLocation;
-            this._stepData.location = currentLocation;
-            this._stepData.contractAddress = address;
-            this._stepData.vmData = CircularJSON.parse(CircularJSON.stringify(data.content)); // make a deep copy TODO: make this better
-            this._stepData.vmData.gasLeft = new BN(data.content.gasLeft);
-            this._stepData.vmData.stack = [];
-            for (let i = 0; i < data.content.stack.length; i++) {
-                this._stepData.vmData.stack.push(new BN(data.content.stack[i]));
-            }
-            this._stepData.scope = currentScope;
-            this._stepData.events = data.content.specialEvents;
-            if (data.exceptionError !== undefined) {
-                this._stepData.exception = data.exceptionError;
-            }
 
-            if (!file) {
-                this.respondToDebugHook("skipEvent");
-            }
-            else if (data.content.specialEvents.length > 0 && data.content.specialEvents.indexOf("breakpoint") === -1 && data.exceptionError === undefined) {
-                // if there were any special events, none of them were a breakpoint, and there was no exception, skip the event
-                this.respondToDebugHook("skipEvent");
+            if (contract && contract.pcMap.has(pc)) {
+                // get line number from pc
+                const index = contract.pcMap.get(pc)!.index;
+                const sourceLocation = LibSdbUtils.SourceMappingDecoder.atIndex(index, contract.srcmapRuntime);
+
+                if (data.content.specialEvents.indexOf("fnJumpDestination") >= 0) {
+                    this.processJumpIn(sourceLocation, contract, data.content.stack, true);
+                }
+                else if (data.content.specialEvents.indexOf("jump") >= 0) {
+                    let processedJump: boolean = false;
+                    if (this._priorStepData && this._priorStepData.source) {
+                        if (this._priorStepData.source.jump === "i") {
+                            this.processJumpIn(sourceLocation, contract, data.content.stack);
+                            processedJump = true;
+                        }
+                        else if (this._priorStepData.source.jump === "o") {
+                            await this.processJumpOut(contract, data.content.stack, data.content.memory);
+                            processedJump = true;
+                        }
+                    }
+
+                    if (!processedJump && pc in contract.functionNames) {
+                        // jump in to external function
+                        // this is the JUMPDEST of a function we just entered
+                        let frame = new LibSdbTypes.StackFrame();
+                        frame.name = contract.functionNames[pc];
+                        frame.file = contract.sourcePath;
+                        frame.line = 0 //currentLocation.start === null ? null : currentLocation.start.line;
+                        this._callStack.unshift(frame);
+                    }
+                }
+                else if (data.content.specialEvents.indexOf("declaration") >= 0) {
+                    this.processDeclaration(sourceLocation, contract, data.content.stack);
+                }
+
+                const fileId = sourceLocation.file;
+                let file: LibSdbTypes.File;
+                if (!isNaN(fileId)) {
+                    file = this._filesById.get(fileId)!;
+                }
+                else {
+                    file = this._files.get(contract.sourcePath)!;
+                }
+
+                // find current scope
+                const currentScope = LibSdbUtils.findScope(sourceLocation.start, contract.ast);
+
+                let currentLocation = {
+                    start: null
+                };
+                if (file) {
+                    currentLocation = LibSdbUtils.SourceMappingDecoder.convertOffsetToLineColumn(sourceLocation, file.lineBreaks);
+                }
+
+                this._stepData.source = sourceLocation;
+                this._stepData.location = currentLocation;
+                this._stepData.scope = currentScope;
+                this._stepData.contractAddress = address;
+                this._stepData.vmData = CircularJSON.parse(CircularJSON.stringify(data.content)); // make a deep copy TODO: make this better
+                this._stepData.vmData.gasLeft = new BN(data.content.gasLeft);
+                this._stepData.vmData.stack = [];
+                for (let i = 0; i < data.content.stack.length; i++) {
+                    this._stepData.vmData.stack.push(new BN(data.content.stack[i]));
+                }
+                this._stepData.events = data.content.specialEvents;
+                if (data.exceptionError !== undefined) {
+                    this._stepData.exception = data.exceptionError;
+                }
+
+                if (!file) {
+                    this.respondToDebugHook("skipEvent");
+                }
+                else if (data.content.specialEvents.length > 0 && data.content.specialEvents.indexOf("breakpoint") === -1 && data.exceptionError === undefined) {
+                    // if there were any special events, none of them were a breakpoint, and there was no exception, skip the event
+                    this.respondToDebugHook("skipEvent");
+                }
+                else {
+                    this.sendEvent("step");
+                }
             }
             else {
-                this.sendEvent("step");
+                this.respondToDebugHook("skipEvent");
             }
         }
     }
