@@ -62,6 +62,14 @@ export class MappingDetail {
     }
 
     async decode(stack: BN[], memory: (number | null)[], _interface: LibSdbInterface, address: string): Promise<DecodedVariable> {
-        return <DecodedVariable> {};
+        let decodedVariable = <DecodedVariable> {
+            name: this.variable.name,
+            type: "mapping",
+            variablesReference: 0, // we can't decode children for mapping's, see https://bit.ly/2G29Oma for details
+            value: this.variable.originalType,
+            result: ""
+        };
+
+        return decodedVariable;
     }
 }
