@@ -23,6 +23,7 @@
   },
   "homepage": "https://gitlab.com/seeseplusplus/solidity-debugger#README",
   "dependencies": {
+    "@types/node": "^8.0.53",
     "bignumber.js": "^6.0.0",
     "bn.js": "^4.11.8",
     "circular-json": "^0.4.0",
@@ -35,7 +36,6 @@
     "ws": "4.0.0"
   },
   "devDependencies": {
-    "@types/node": "^8.0.53",
     "@types/ws": "^4.0.0"
   }
 }
