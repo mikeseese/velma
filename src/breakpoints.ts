@@ -51,6 +51,105 @@ export class LibSdbBreakpoints {
         }
     }
 
+    private getSmallestPC(sourceLocations: LibSdbUtils.SourceMappingDecoder.SourceLocation[], bytecode: LibSdbTypes.ContractBytecode): number | null {
+        let pc: number | null = null;
+
+        // get smallest program count? that should hypothetically be the first instruction
+        for (let k = 0; k < sourceLocations.length; k++) {
+            const sourceLocation = sourceLocations[k];
+            const index = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, bytecode.srcMap);
+            if (index !== null) {
+                for (const entry of bytecode.pcMap.entries()) {
+                    if (entry[1].index === index) {
+                        if (pc === null || entry[0] < pc) {
+                            pc = entry[0];
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        return pc;
+    }
+
+    private async createBreakpoints(bp: LibSdbTypes.Breakpoint, startPosition: number, endPosition: number, pc: number, file: LibSdbTypes.File, contract: LibSdbTypes.Contract, bpIsRuntime: boolean): Promise<void> {
+        // this contract has the breakpoint in it
+        if (bpIsRuntime) {
+            contract.runtimeBytecode.breakpoints.set(bp.id, pc);
+        }
+        else {
+            contract.creationBytecode.breakpoints.set(bp.id, pc);
+        }
+
+        // apply the breakpoint to existing instances of this contract
+        for (let k = 0; k < contract.addresses.length; k++) {
+            await this._runtime._interface.requestSendBreakpoint(bp.id, contract.addresses[k], pc, true, bpIsRuntime);
+        }
+
+        // find contracts that inherit this contract and check their sourcemaps for the breakpoint
+        for (let k = 0; k < file.contracts.length; k++) {
+            const childContract = file.contracts[k];
+
+            if (childContract.inheritedContracts.indexOf(contract) >= 0) {
+                // this contract inherits the contract with the breakpoint, we need to check sourcemap
+
+                let childContractSourceMap: LibSdbUtils.SourceMappingDecoder.SourceLocation[];
+                if (bpIsRuntime) {
+                    childContractSourceMap = LibSdbUtils.SourceMappingDecoder.decompressAll(childContract.runtimeBytecode.srcMap);
+                }
+                else {
+                    childContractSourceMap = LibSdbUtils.SourceMappingDecoder.decompressAll(childContract.creationBytecode.srcMap);
+                }
+
+                for (let l = 0; l < childContractSourceMap.length; l++) {
+                    let childIndex: number | null = null;
+                    let childPc: number | null = null;
+                    const sourceLocation = childContractSourceMap[l];
+
+                    if (!(startPosition <= sourceLocation.start && sourceLocation.start <= endPosition)) {
+                        continue;
+                    }
+
+                    if (bpIsRuntime) {
+                        childIndex = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, childContract.runtimeBytecode.srcMap);
+                    }
+                    else {
+                        childIndex = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, childContract.creationBytecode.srcMap);
+                    }
+                    if (childIndex !== null) {
+                        const pcMap = bpIsRuntime ? childContract.runtimeBytecode.pcMap : childContract.creationBytecode.pcMap;
+                        for (const entry of pcMap.entries()) {
+                            if (entry[1].index === childIndex) {
+                                if (childPc === null || entry[0] < childPc) {
+                                    childPc = entry[0];
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    if (childPc !== null) {
+                        // this contract has the breakpoint in it
+                        if (bpIsRuntime) {
+                            childContract.runtimeBytecode.breakpoints.set(bp.id, pc);
+                        }
+                        else {
+                            childContract.creationBytecode.breakpoints.set(bp.id, pc);
+                        }
+
+                        // apply the breakpoint to existing instances of this contract
+                        for (let m = 0; m < childContract.addresses.length; m++) {
+                            await this._runtime._interface.requestSendBreakpoint(bp.id, childContract.addresses[m], childPc, true, bpIsRuntime);
+                        }
+
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     public async verifyBreakpoints(path: string): Promise<void> {
         const file = this._runtime._files.get(path);
 
@@ -68,8 +167,6 @@ export class LibSdbBreakpoints {
                 const endPosition = file.lineBreaks[bp.line];
                 for (let j = 0; j < file.contracts.length; j++) {
                     let sourceLocations: LibSdbUtils.SourceMappingDecoder.SourceLocation[] = [];
-                    let index: number | null = null;
-                    let pc: number | null = null;
                     const contract = file.contracts[j];
 
                     // get source locations that match the breakpoint
@@ -89,76 +186,16 @@ export class LibSdbBreakpoints {
                         return true;
                     });
 
-                    // get smallest program count? that should hypothetically be the first instruction
-                    for (let k = 0; k < sourceLocations.length; k++) {
-                        const sourceLocation = sourceLocations[k];
-                        index = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, contract.srcmapRuntime);
-                        if (index !== null) {
-                            for (const entry of contract.pcMap.entries()) {
-                                if (entry[1].index === index) {
-                                    if (pc === null || entry[0] < pc) {
-                                        pc = entry[0];
-                                    }
-                                    break;
-                                }
-                            }
-                        }
+                    const creationPC = this.getSmallestPC(sourceLocations, contract.creationBytecode);
+                    const runtimePC = this.getSmallestPC(sourceLocations, contract.runtimeBytecode);
+
+                    if (creationPC !== null) {
+                        await this.createBreakpoints(bp, startPosition, endPosition, creationPC, file, contract, false);
                     }
-
-                    if (pc !== null) {
-                        // this contract has the breakpoint in it
-                        contract.breakpoints.set(bp.id, pc);
-
-                        // apply the breakpoint to existing instances of this contract
-                        for (let k = 0; k < contract.addresses.length; k++) {
-                            await this._runtime._interface.requestSendBreakpoint(bp.id, contract.addresses[k], pc, true);
-                        }
-
-                        // find contracts that inherit this contract and check their sourcemaps for the breakpoint
-                        for (let k = 0; k < file.contracts.length; k++) {
-                            const childContract = file.contracts[k];
-
-                            if (childContract.inheritedContracts.indexOf(contract) >= 0) {
-                                // this contract inherits the contract with the breakpoint, we need to check sourcemap
-
-                                const childContractSourceMap = LibSdbUtils.SourceMappingDecoder.decompressAll(childContract.srcmapRuntime);
-
-                                for (let l = 0; l < childContractSourceMap.length; l++) {
-                                    let childIndex: number | null = null;
-                                    let childPc: number | null = null;
-                                    const sourceLocation = childContractSourceMap[l];
-
-                                    if (!(startPosition <= sourceLocation.start && sourceLocation.start <= endPosition)) {
-                                        continue;
-                                    }
-
-                                    childIndex = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, childContract.srcmapRuntime);
-                                    if (childIndex !== null) {
-                                        for (const entry of childContract.pcMap.entries()) {
-                                            if (entry[1].index === childIndex) {
-                                                if (childPc === null || entry[0] < childPc) {
-                                                    childPc = entry[0];
-                                                }
-                                                break;
-                                            }
-                                        }
-                                    }
-
-                                    if (childPc !== null) {
-                                        // this contract has the breakpoint in it
-                                        childContract.breakpoints.set(bp.id, pc);
-
-                                        // apply the breakpoint to existing instances of this contract
-                                        for (let m = 0; m < childContract.addresses.length; m++) {
-                                            await this._runtime._interface.requestSendBreakpoint(bp.id, childContract.addresses[m], childPc, true);
-                                        }
-
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-
+                    if (runtimePC !== null) {
+                        await this.createBreakpoints(bp, startPosition, endPosition, runtimePC, file, contract, true);
+                    }
+                    if (creationPC !== null || runtimePC !== null) {
                         break;
                     }
                 };
@@ -174,9 +211,10 @@ export class LibSdbBreakpoints {
             if (index >= 0) {
                 const bp = file.breakpoints[index];
                 for (let i = 0; i < file.contracts.length; i++) {
-                    file.contracts[i].breakpoints.delete(bp.id);
+                    file.contracts[i].creationBytecode.breakpoints.delete(bp.id);
+                    file.contracts[i].runtimeBytecode.breakpoints.delete(bp.id);
                 }
-                await this._runtime._interface.requestSendBreakpoint(bp.id, "", 0, false);
+                await this._runtime._interface.requestSendBreakpoint(bp.id, "", 0, false, true);
                 file.breakpoints.splice(index, 1);
                 return bp;
             }
@@ -191,9 +229,10 @@ export class LibSdbBreakpoints {
         if (file) {
             for (let i = 0; i < file.breakpoints.length; i++) {
                 for (let j = 0; j < file.contracts.length; j++) {
-                    file.contracts[j].breakpoints.delete(file.breakpoints[i].id);
+                    file.contracts[i].creationBytecode.breakpoints.delete(file.breakpoints[i].id);
+                    file.contracts[i].runtimeBytecode.breakpoints.delete(file.breakpoints[i].id);
                 }
-                await this._runtime._interface.requestSendBreakpoint(file.breakpoints[i].id, "", 0, false);
+                await this._runtime._interface.requestSendBreakpoint(file.breakpoints[i].id, "", 0, false, true);
             }
             file.breakpoints = [];
         }

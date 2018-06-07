@@ -296,7 +296,7 @@ function ` + functionName + `(` + argsString + `) returns (bool) {
 
                         //this._runtime.continue(false, "stopOnEvalBreakpoint");
                         if (newStartPc !== null && newEndPc !== null) {
-                            const evalRequest = new LibSdbTypes.EvaluationRequest(evaluationBytecode.object, newStartPc, newEndPc, contract.runtimeBytecode, this._runtime._stepData.vmData.pc);
+                            const evalRequest = new LibSdbTypes.EvaluationRequest(evaluationBytecode.object, newStartPc, newEndPc, contract.runtimeBytecode.code, this._runtime._stepData.vmData.pc);
                             const vmData = await this._runtime._interface.requestEvaluation(evalRequest);
 
                             ongoingEvaluation.returnVariable.position = vmData.stack.length - 1;

@@ -146,7 +146,7 @@ export class LibSdbInterface {
         });
     }
 
-    public async requestSendBreakpoint(id: number, address: string, pc: number, enabled: boolean): Promise<any> {
+    public async requestSendBreakpoint(id: number, address: string, pc: number, enabled: boolean, bpIsRuntime: boolean): Promise<any> {
         return new Promise<any>((resolve, reject) => {
             const msgId = uuidv4();
             const request = {
@@ -157,7 +157,8 @@ export class LibSdbInterface {
                     "id": id,
                     "address": address,
                     "pc": pc,
-                    "enabled": enabled
+                    "enabled": enabled,
+                    "runtime": bpIsRuntime
                 }
             };
 
@@ -384,6 +385,16 @@ export class LibSdbInterface {
             }
             else if (triggerType === "step" || triggerType === "exception") {
                 await this._runtime.vmStepped(data);
+            }
+            else if (triggerType === "newContract") {
+                const compilationProcessor = new LibSdbCompilationProcessor();
+                const contract = compilationProcessor.linkContractAddressFromBytecode(data.content.code, data.content.address);
+                if (contract !== null) {
+                    await this._runtime._breakpoints.verifyBreakpoints(contract.sourcePath);
+                    await this._runtime.sendVariableDeclarations(data.content.address.toLowerCase());
+                    await this._runtime.sendFunctionJumpDestinations(data.content.address.toLowerCase());
+                }
+                this.respondToDebugHook("stopOnBreakpoint", data.id);
             }
         }
         else if (messageType === "response") {

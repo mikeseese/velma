@@ -79,7 +79,8 @@ export class LibSdbCompilationProcessor {
                     sdbContract.name = contractName;
                     sdbContract.sourcePath = absoluteSourcePath;
 
-                    sdbContract.pcMap = LibSdbUtils.nameOpCodes(new Buffer(contract.evm.deployedBytecode.object, 'hex'));
+                    sdbContract.creationBytecode.pcMap = LibSdbUtils.nameOpCodes(new Buffer(contract.evm.bytecode.object, 'hex'));
+                    sdbContract.runtimeBytecode.pcMap = LibSdbUtils.nameOpCodes(new Buffer(contract.evm.deployedBytecode.object, 'hex'));
 
                     if (contract.evm.methodIdentifiers !== undefined) {
                         sdbContract.functionNames.clear();
@@ -91,9 +92,10 @@ export class LibSdbCompilationProcessor {
                         });
                     }
 
-                    sdbContract.bytecode = contract.evm.bytecode.object;
-                    sdbContract.runtimeBytecode = contract.evm.deployedBytecode.object;
-                    sdbContract.srcmapRuntime = contract.evm.deployedBytecode.sourceMap;
+                    sdbContract.creationBytecode.code = contract.evm.bytecode.object;
+                    sdbContract.creationBytecode.srcMap = contract.evm.bytecode.sourceMap || "";
+                    sdbContract.runtimeBytecode.code = contract.evm.deployedBytecode.object;
+                    sdbContract.runtimeBytecode.srcMap = contract.evm.deployedBytecode.sourceMap;
 
                     this._contractNameMap.set(contractName, sdbContract);
 
@@ -158,5 +160,21 @@ export class LibSdbCompilationProcessor {
         else {
             return null;
         }
+    }
+
+    public linkContractAddressFromBytecode(bytecode: string, address: string): LibSdbTypes.Contract | null {
+        let returnedContract: LibSdbTypes.Contract | null = null
+        
+        this._runtime._contractsByName.forEach((contract, key) => {
+            if (contract.creationBytecode.code === bytecode) {
+                if (contract.addresses.indexOf(address) === -1) {
+                    contract.addresses.push(address.toLowerCase());
+                }
+                this._runtime._contractsByAddress.set(address.toLowerCase(), contract);
+                returnedContract = contract;
+            }
+        });
+        
+        return returnedContract;
     }
 }

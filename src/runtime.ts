@@ -170,10 +170,10 @@ export class LibSdbRuntime extends EventEmitter {
             this._stepData = new LibSdbTypes.StepData();
             this._stepData.debuggerMessageId = data.id;
 
-            if (contract && contract.pcMap.has(pc)) {
+            if (contract && contract.runtimeBytecode.pcMap.has(pc)) {
                 // get line number from pc
-                const index = contract.pcMap.get(pc)!.index;
-                const sourceLocation = LibSdbUtils.SourceMappingDecoder.atIndex(index, contract.srcmapRuntime);
+                const index = contract.runtimeBytecode.pcMap.get(pc)!.index;
+                const sourceLocation = LibSdbUtils.SourceMappingDecoder.atIndex(index, contract.runtimeBytecode.srcMap);
 
                 if (data.content.specialEvents.indexOf("fnJumpDestination") >= 0) {
                     this.processJumpIn(sourceLocation, contract, data.content.stack, true);
@@ -545,7 +545,7 @@ export class LibSdbRuntime extends EventEmitter {
         const declarations: number[] = [];
         if (contract) {
             let indexMap = new Map<number, number>();
-            for (const entry of contract.pcMap.entries()) {
+            for (const entry of contract.runtimeBytecode.pcMap.entries()) {
                 indexMap.set(entry[1].index, entry[0]);
             }
             const astWalker = new LibSdbUtils.AstWalker();
@@ -557,7 +557,7 @@ export class LibSdbRuntime extends EventEmitter {
                         length: parseInt(srcSplit[1]),
                         file: parseInt(srcSplit[2])
                     };
-                    const index = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, contract.srcmapRuntime);
+                    const index = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, contract.runtimeBytecode.srcMap);
                     if (index !== null) {
                         const pc = indexMap.get(index);
                         if (pc !== undefined) {
@@ -581,7 +581,7 @@ export class LibSdbRuntime extends EventEmitter {
         const jumpDestinations: number[] = [];
         if (contract) {
             let indexMap = new Map<number, number>();
-            for (const entry of contract.pcMap.entries()) {
+            for (const entry of contract.runtimeBytecode.pcMap.entries()) {
                 indexMap.set(entry[1].index, entry[0]);
             }
             const astWalker = new LibSdbUtils.AstWalker();
@@ -593,7 +593,7 @@ export class LibSdbRuntime extends EventEmitter {
                         length: parseInt(srcSplit[1]),
                         file: parseInt(srcSplit[2])
                     };
-                    const index = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, contract.srcmapRuntime);
+                    const index = LibSdbUtils.SourceMappingDecoder.toIndex(sourceLocation, contract.runtimeBytecode.srcMap);
                     if (index !== null) {
                         const pc = indexMap.get(index);
                         if (pc !== undefined) {

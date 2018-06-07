@@ -4,30 +4,57 @@ import { LibSdbTypes } from "../types/types";
 
 const CircularJSON = require("circular-json");
 
+export class ContractBytecode {
+    code: string;
+    srcMap: string;
+    pcMap: Map<number, LibSdbTypes.EvmInstruction>;
+    breakpoints: Map<number, number>;
+
+    constructor() {
+        this.pcMap = new Map<number, LibSdbTypes.EvmInstruction>();
+        this.breakpoints = new Map<number, number>();
+    }
+
+    clone(): ContractBytecode {
+        let clone = new ContractBytecode();
+
+        for (const v of this.pcMap) {
+            clone.pcMap.set(v[0], v[1]);
+        }
+
+        clone.code = this.code;
+
+        clone.srcMap = this.srcMap;
+
+        for (const v of this.breakpoints) {
+            clone.breakpoints.set(v[0], v[1]);
+        }
+
+        return clone;
+    }
+}
+
 export class Contract {
     name: string;
     sourcePath: string;
     addresses: string[];
-    pcMap: Map<number, LibSdbTypes.EvmInstruction>;
     scopeVariableMap: ScopeVariableMap;
     functionNames: Map<number, string>; // key: pc, value: hash
-    bytecode: string;
-    runtimeBytecode: string;
-    srcmapRuntime: string;
+    creationBytecode: ContractBytecode;
+    runtimeBytecode: ContractBytecode;
     ast: Ast;
     stateVariables: Variable[];
-    breakpoints: Map<number, number>;
     structDefinitions: Map<string, LibSdbTypes.VariableMap>;
     enumDefinitions: Map<string, LibSdbTypes.EnumDefinition>;
     inheritedContracts: Contract[];
 
     constructor() {
-        this.pcMap = new Map<number, LibSdbTypes.EvmInstruction>();
         this.scopeVariableMap = new Map<number, VariableMap>();
         this.functionNames = new Map<number, string>();
+        this.creationBytecode = new ContractBytecode();
+        this.runtimeBytecode = new ContractBytecode();
         this.stateVariables = [];
         this.addresses = [];
-        this.breakpoints = new Map<number, number>();
         this.structDefinitions = new Map<string, Map<string, Variable>>();
         this.enumDefinitions = new Map<string, LibSdbTypes.EnumDefinition>();
         this.inheritedContracts = [];
@@ -42,10 +69,6 @@ export class Contract {
 
         clone.addresses = JSON.parse(JSON.stringify(this.addresses));
 
-        for (const v of this.pcMap) {
-            clone.pcMap.set(v[0], v[1]);
-        }
-
         for (const variables of this.scopeVariableMap) {
             const variablesClone = new Map<string, Variable>();
             for (const variable of variables[1]) {
@@ -58,11 +81,9 @@ export class Contract {
             clone.functionNames.set(v[0], v[1]);
         }
 
-        clone.bytecode = this.bytecode;
+        clone.creationBytecode = this.creationBytecode.clone();
 
-        clone.runtimeBytecode = this.runtimeBytecode;
-
-        clone.srcmapRuntime = this.srcmapRuntime;
+        clone.runtimeBytecode = this.runtimeBytecode.clone();
 
         clone.ast = CircularJSON.parse(CircularJSON.stringify(this.ast));
 
