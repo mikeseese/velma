@@ -23,17 +23,23 @@ export class StepData {
 
         clone.debuggerMessageId = this.debuggerMessageId;
 
-        clone.source = CircularJSON.parse(CircularJSON.stringify(this.source));
+        if (this.source) {
+            clone.source = CircularJSON.parse(CircularJSON.stringify(this.source));
+        }
 
-        clone.location = CircularJSON.parse(CircularJSON.stringify(this.location));
+        if (this.location) {
+            clone.location = CircularJSON.parse(CircularJSON.stringify(this.location));
+        }
 
         clone.contractAddress = this.contractAddress;
 
-        clone.vmData = CircularJSON.parse(CircularJSON.stringify(this.vmData)); // TODO: make this better
-        clone.vmData.gasLeft = new BN(this.vmData.gasLeft);
-        clone.vmData.stack = [];
-        for (let i = 0; i < this.vmData.stack.length; i++) {
-            clone.vmData.stack.push(new BN(this.vmData.stack[i]));
+        if (this.vmData) {
+            clone.vmData = CircularJSON.parse(CircularJSON.stringify(this.vmData)); // TODO: make this better
+            clone.vmData.gasLeft = new BN(this.vmData.gasLeft);
+            clone.vmData.stack = [];
+            for (let i = 0; i < this.vmData.stack.length; i++) {
+                clone.vmData.stack.push(new BN(this.vmData.stack[i]));
+            }
         }
 
         for (let i = 0; i < this.scope.length; i++) {

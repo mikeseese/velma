@@ -69,7 +69,7 @@ export class LibSdbRuntime extends EventEmitter {
             return;
         }
 
-        this._priorStepData = CircularJSON.parse(CircularJSON.stringify(this._stepData));
+        this._priorStepData = this._stepData.clone();
 
         this._interface.respondToDebugHook(stepEvent, this._stepData.debuggerMessageId, content);
     }
@@ -77,7 +77,7 @@ export class LibSdbRuntime extends EventEmitter {
     private processJumpIn(sourceLocation: any, contract: LibSdbTypes.Contract, stack: any, isExternal: boolean = false) {
         // jump in
 
-        if (this._priorStepData) {
+        if (this._priorStepData && this._priorStepData.source && this._priorStepData.location) {
             // push the prior function onto the stack. the current location for stack goes on when requested
             const nodePrior = LibSdbUtils.SourceMappingDecoder.findNodeAtSourceLocation("FunctionDefinition", this._priorStepData.source, { AST: contract.ast });
             const functionNamePrior = nodePrior === null ? "(anonymous function)" : nodePrior.attributes.name;
