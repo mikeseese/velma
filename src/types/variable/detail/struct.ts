@@ -3,6 +3,7 @@ import { ValueDetail } from "./value";
 import { BN } from "bn.js";
 import { LibSdbInterface } from "../../../interface";
 import { LibSdbTypes } from "../../types";
+import { VariableProcessor } from "../definition/processor";
 
 export class StructDetail {
     variable: Variable;
@@ -77,8 +78,22 @@ export class StructDetail {
         return clone;
     }
 
+    assignMemberPositions(): void {
+        const processor = new VariableProcessor(this.variable, this.position, 0);
+        for (let i = 0; i < this.members.length; i++) {
+            if (this.members[i].detail !== null) {
+                processor.applyStoragePositions(this.members[i].detail!);
+            }
+        }
+    }
+
     async decodeChildren(stack: BN[], memory: (number | null)[], _interface: LibSdbInterface, address: string): Promise<DecodedVariable[]> {
         let decodedVariables: DecodedVariable[] = [];
+
+        if (this.isPointer && this.variable.position) {
+            this.position = stack[this.variable.position].toNumber();
+            this.assignMemberPositions();
+        }
 
         for (let i = 0; i < this.members.length; i++) {
             let decodedVariable: DecodedVariable;

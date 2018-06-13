@@ -8,17 +8,18 @@ import { MappingDetail } from "../detail/mapping";
 import { LibSdbRuntime } from "../../../runtime";
 import { ContractDetail } from "../detail/contract";
 import { LibSdbTypes } from "../../types";
-import { ContractProcessor } from "../../../compilation/contractProcessor";
 
 export class VariableProcessor {
     private _runtime: LibSdbRuntime;
     private _variable: Variable;
-    private _contractProcessor: ContractProcessor;
+    public _currentStorageSlot: number;
+    public _currentStorageSlotOffset: number;
 
-    constructor(variable: Variable, contractProcessor: ContractProcessor) {
+    constructor(variable: Variable, storageSlot: number, storageSlotOffset: number) {
         this._runtime = LibSdbRuntime.instance();
         this._variable = variable;
-        this._contractProcessor = contractProcessor;
+        this._currentStorageSlot = storageSlot;
+        this._currentStorageSlotOffset = storageSlotOffset;
     }
 
     public applyType(storageLocation: string, parentName: string): void {
@@ -433,41 +434,41 @@ export class VariableProcessor {
     }
 
     private storageIncrementSlot(): void {
-        this._contractProcessor._currentStorageSlot++;
-        this._contractProcessor._currentStorageSlotOffset = 0;
+        this._currentStorageSlot++;
+        this._currentStorageSlotOffset = 0;
     }
 
     private storageIncrementOffset(offset: number): void {
-        this._contractProcessor._currentStorageSlotOffset += offset;
+        this._currentStorageSlotOffset += offset;
     }
 
     private storageCheckSpaceLeft(storageLength: number): void {
         // check if we have enough space
-        const spaceLeft = 32 - this._contractProcessor._currentStorageSlotOffset;
+        const spaceLeft = 32 - this._currentStorageSlotOffset;
         if (spaceLeft - storageLength < 0) {
             this.storageIncrementSlot();
         }
     }
 
     private storageCheckNewSlotRequired(): void {
-        if (this._contractProcessor._currentStorageSlotOffset > 0) {
+        if (this._currentStorageSlotOffset > 0) {
             // always start new slots for arrays, structs, and mappings
             this.storageIncrementSlot();
         }
     }
 
     private storageCheckEndOfSlot(): void {
-        if (this._contractProcessor._currentStorageSlotOffset >= 32) {
+        if (this._currentStorageSlotOffset >= 32) {
             this.storageIncrementSlot();
         }
     }
 
     private applyStoragePosition(detail: LibSdbTypes.VariableDetailType): void {
-        detail.position = this._contractProcessor._currentStorageSlot;
-        detail.offset = this._contractProcessor._currentStorageSlotOffset;
+        detail.position = this._currentStorageSlot;
+        detail.offset = this._currentStorageSlotOffset;
     }
 
-    private applyStoragePositions(detail: LibSdbTypes.VariableDetailType): void {
+    public applyStoragePositions(detail: LibSdbTypes.VariableDetailType): void {
         if (detail instanceof ValueDetail) {
             this.storageCheckSpaceLeft(detail.storageLength);
             this.applyStoragePosition(detail);
@@ -475,30 +476,42 @@ export class VariableProcessor {
             this.storageCheckEndOfSlot();
         }
         else if (detail instanceof ArrayDetail) {
-            this.storageCheckNewSlotRequired();
-            this.applyStoragePosition(detail);
-            if (!detail.isDynamic) {
-                for (let i = 0; i < detail.members.length; i++) {
-                    this.applyStoragePositions(detail.members[i]);
-                }
+            if (detail.isPointer) {
+                // this is a pointer, the slot location is determined by the stack
             }
-            if (detail.position === this._contractProcessor._currentStorageSlot || this._contractProcessor._currentStorageSlotOffset > 0) {
-                // occupy whole slots
-                this.storageIncrementSlot();
+            else {
+                // this is a reference, go ahead and increment storage
+                this.storageCheckNewSlotRequired();
+                this.applyStoragePosition(detail);
+                if (!detail.isDynamic) {
+                    for (let i = 0; i < detail.members.length; i++) {
+                        this.applyStoragePositions(detail.members[i]);
+                    }
+                }
+                if (detail.position === this._currentStorageSlot || this._currentStorageSlotOffset > 0) {
+                    // occupy whole slots
+                    this.storageIncrementSlot();
+                }
             }
         }
         else if (detail instanceof StructDetail) {
-            this.storageCheckNewSlotRequired();
-            this.applyStoragePosition(detail);
-            for (let i = 0; i < detail.members.length; i++) {
-                const memberDetail = detail.members[i].detail;
-                if (memberDetail !== null) {
-                    this.applyStoragePositions(memberDetail);
-                }
+            if (detail.isPointer) {
+                // this is a pointer, the slot location is determined by the stack
             }
-            if (detail.position === this._contractProcessor._currentStorageSlot || this._contractProcessor._currentStorageSlotOffset > 0) {
-                // occupy whole slots
-                this.storageIncrementSlot();
+            else {
+                // this is a reference, go ahead and increment storage
+                this.storageCheckNewSlotRequired();
+                this.applyStoragePosition(detail);
+                for (let i = 0; i < detail.members.length; i++) {
+                    const memberDetail = detail.members[i].detail;
+                    if (memberDetail !== null) {
+                        this.applyStoragePositions(memberDetail);
+                    }
+                }
+                if (detail.position === this._currentStorageSlot || this._currentStorageSlotOffset > 0) {
+                    // occupy whole slots
+                    this.storageIncrementSlot();
+                }
             }
         }
         else if (detail instanceof MappingDetail) {

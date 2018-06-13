@@ -131,7 +131,9 @@ export class Variable {
     }
 
     applyType(storageLocation: string, parentName: string, contractProcessor: ContractProcessor): void {
-        const processor = new VariableProcessor(this, contractProcessor);
+        const processor = new VariableProcessor(this, contractProcessor._currentStorageSlot, contractProcessor._currentStorageSlotOffset);
         processor.applyType(storageLocation, parentName);
+        contractProcessor._currentStorageSlot = processor._currentStorageSlot;
+        contractProcessor._currentStorageSlotOffset = processor._currentStorageSlotOffset;
     }
 }
