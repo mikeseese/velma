@@ -229,8 +229,8 @@ export class LibSdbBreakpoints {
         if (file) {
             for (let i = 0; i < file.breakpoints.length; i++) {
                 for (let j = 0; j < file.contracts.length; j++) {
-                    file.contracts[i].creationBytecode.breakpoints.delete(file.breakpoints[i].id);
-                    file.contracts[i].runtimeBytecode.breakpoints.delete(file.breakpoints[i].id);
+                    file.contracts[j].creationBytecode.breakpoints.delete(file.breakpoints[i].id);
+                    file.contracts[j].runtimeBytecode.breakpoints.delete(file.breakpoints[i].id);
                 }
                 await this._runtime._interface.requestSendBreakpoint(file.breakpoints[i].id, "", 0, false, true);
             }
