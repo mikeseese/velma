@@ -44,10 +44,10 @@ export class EnumDetail extends ValueDetail {
 
         switch (this.variable.location) {
             case VariableLocation.Stack:
-                v = decodeStack((this.variable.position || 0) + this.position, this, stack);
+                v = decodeStack((this.variable.position || 0) + this.position.toNumber(), this, stack);
                 break;
             case VariableLocation.Memory:
-                v = decodeMemory((this.variable.position || 0), this.position, this, stack, memory);
+                v = decodeMemory((this.variable.position || 0), this.position.toNumber(), this, stack, memory);
                 break;
             case VariableLocation.Storage:
                 v = await decodeStorage(this.position, this.offset || 0, this.storageLength, this, _interface, address);

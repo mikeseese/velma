@@ -7,7 +7,7 @@ import { LibSdbTypes } from "../../types";
 
 export class MappingDetail {
     variable: Variable;
-    position: number; // either the slot number or relative position in stack/memory
+    position: BN; // either the slot number or relative position in stack/memory
     offset: number | null; // used for storage locations
     id: number;
     key: ValueDetail | ArrayDetail; // cant be dynamic array or contract
@@ -17,6 +17,7 @@ export class MappingDetail {
 
     constructor(variable: Variable) {
         this.variable = variable;
+        this.position = new BN(0);
         this.id = Variable.nextId++;
     }
 

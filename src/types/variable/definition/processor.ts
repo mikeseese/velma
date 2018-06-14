@@ -9,13 +9,15 @@ import { LibSdbRuntime } from "../../../runtime";
 import { ContractDetail } from "../detail/contract";
 import { LibSdbTypes } from "../../types";
 
+import { BN } from "bn.js";
+
 export class VariableProcessor {
     private _runtime: LibSdbRuntime;
     private _variable: Variable;
-    public _currentStorageSlot: number;
+    public _currentStorageSlot: BN;
     public _currentStorageSlotOffset: number;
 
-    constructor(variable: Variable, storageSlot: number, storageSlotOffset: number) {
+    constructor(variable: Variable, storageSlot: BN, storageSlotOffset: number) {
         this._runtime = LibSdbRuntime.instance();
         this._variable = variable;
         this._currentStorageSlot = storageSlot;
@@ -400,7 +402,7 @@ export class VariableProcessor {
         detail.offset = null;
 
         if (detail instanceof ValueDetail) {
-            detail.position = offsetPosition;
+            detail.position = new BN(offsetPosition);
         }
         else if (detail instanceof ArrayDetail) {
             if (!detail.isDynamic) {
@@ -429,12 +431,12 @@ export class VariableProcessor {
             // this isn't applicable/feasible
         }
         else if (detail instanceof ContractDetail) {
-            detail.position = offsetPosition;
+            detail.position = new BN(offsetPosition);
         }
     }
 
     private storageIncrementSlot(): void {
-        this._currentStorageSlot++;
+        this._currentStorageSlot = this._currentStorageSlot.addn(1);
         this._currentStorageSlotOffset = 0;
     }
 
@@ -464,7 +466,7 @@ export class VariableProcessor {
     }
 
     private applyStoragePosition(detail: LibSdbTypes.VariableDetailType): void {
-        detail.position = this._currentStorageSlot;
+        detail.position = this._currentStorageSlot.clone();
         detail.offset = this._currentStorageSlotOffset;
     }
 
@@ -488,7 +490,7 @@ export class VariableProcessor {
                         this.applyStoragePositions(detail.members[i]);
                     }
                 }
-                if (detail.position === this._currentStorageSlot || this._currentStorageSlotOffset > 0) {
+                if (detail.position.eq(this._currentStorageSlot) || this._currentStorageSlotOffset > 0) {
                     // occupy whole slots
                     this.storageIncrementSlot();
                 }
@@ -508,7 +510,7 @@ export class VariableProcessor {
                         this.applyStoragePositions(memberDetail);
                     }
                 }
-                if (detail.position === this._currentStorageSlot || this._currentStorageSlotOffset > 0) {
+                if (detail.position.eq(this._currentStorageSlot) || this._currentStorageSlotOffset > 0) {
                     // occupy whole slots
                     this.storageIncrementSlot();
                 }
@@ -531,7 +533,7 @@ export class VariableProcessor {
             case (VariableLocation.Stack): {
                 // the detail's position is just the stack position
                 // this means the variable is a value type at the root (not an array/struct/mapping)
-                detail.position = 0;
+                detail.position = new BN(0);
                 detail.offset = null;
                 break;
             }

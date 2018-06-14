@@ -8,7 +8,7 @@ import { decode as decodeStorage } from "../decode/storage";
 
 export class ValueDetail {
     variable: Variable;
-    position: number; // either the relative slot number or relative position in stack/memory
+    position: BN; // either the relative slot number or relative position in stack/memory
     offset: number | null; // used for storage locations
     type: VariableType;
     storageLength: number;
@@ -16,6 +16,7 @@ export class ValueDetail {
 
     constructor(variable: Variable) {
         this.variable = variable;
+        this.position = new BN(0);
         this.memoryLength = 32;
     }
 
@@ -40,14 +41,14 @@ export class ValueDetail {
     }
 
     async decode(stack: BN[], memory: (number | null)[], _interface: LibSdbInterface, address: string): Promise<DecodedVariable> {
-        let v: string = "";
+        let v: string = "(invalid value)";
 
         switch (this.variable.location) {
             case VariableLocation.Stack:
-                v = decodeStack((this.variable.position || 0) + this.position, this, stack);
+                v = decodeStack((this.variable.position || 0) + this.position.toNumber(), this, stack);
                 break;
             case VariableLocation.Memory:
-                v = decodeMemory((this.variable.position || 0), this.position, this, stack, memory);
+                v = decodeMemory((this.variable.position || 0), this.position.toNumber(), this, stack, memory);
                 break;
             case VariableLocation.Storage:
                 v = await decodeStorage(this.position, this.offset || 0, this.storageLength, this, _interface, address);

@@ -4,7 +4,7 @@ import { LibSdbInterface } from "../../../interface";
 
 export class ContractDetail {
     variable: Variable;
-    position: number; // either the slot number or relative position in stack/memory
+    position: BN; // either the slot number or relative position in stack/memory
     offset: number | null; // used for storage locations
     id: number;
     name: string;
@@ -13,6 +13,7 @@ export class ContractDetail {
 
     constructor(variable: Variable) {
         this.variable = variable;
+        this.position = new BN(0);
         this.id = Variable.nextId++;
         this.memoryLength = 32; // essentially an address
         this.storageLength = 20; // TODO: does it only take up a 20 byte address?

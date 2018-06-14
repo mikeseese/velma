@@ -9,7 +9,7 @@ export class ArrayDetail {
     variable: Variable;
     location: VariableLocation;
     isPointer: boolean; // pointer vs reference (used for storage locations)
-    position: number; // either the slot number or relative position in stack/memory
+    position: BN; // either the slot number or relative position in stack/memory
     offset: number | null; // used for storage locations
     id: number;
     isDynamic: boolean;
@@ -22,6 +22,7 @@ export class ArrayDetail {
 
     constructor(variable: Variable) {
         this.variable = variable;
+        this.position = new BN(0);
         this.id = Variable.nextId++;
         this.members = [];
     }
@@ -105,8 +106,8 @@ export class ArrayDetail {
             result: this.members.length.toString()
         });
 
-        if (this.isPointer && this.variable.position) {
-            this.position = stack[this.variable.position].toNumber();
+        if (this.isPointer && this.variable.position && this.variable.position < stack.length) {
+            this.position = stack[this.variable.position].clone();
             this.assignMemberPositions();
         }
 

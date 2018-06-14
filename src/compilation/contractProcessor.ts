@@ -3,18 +3,20 @@ import { LibSdbTypes } from "../types/types";
 import { LibSdbUtils } from "../utils/utils";
 import { LibSdbRuntime } from "../runtime";
 
+import { BN } from "bn.js"
+
 export class ContractProcessor {
     private _runtime: LibSdbRuntime;
     private _compilationProcessor: LibSdbCompilationProcessor;
     private _contract: LibSdbTypes.Contract;
-    public _currentStorageSlot: number;
+    public _currentStorageSlot: BN;
     public _currentStorageSlotOffset: number;
 
     constructor(compilationProcessor: LibSdbCompilationProcessor, contract: LibSdbTypes.Contract) {
         this._compilationProcessor = compilationProcessor;
         this._contract = contract;
         this._runtime = LibSdbRuntime.instance();
-        this._currentStorageSlot = 0;
+        this._currentStorageSlot = new BN(0);
         this._currentStorageSlotOffset = 0;
     }
 
@@ -55,7 +57,7 @@ export class ContractProcessor {
             const inheritedContract = this._compilationProcessor._contractNameMap.get(inheritedContractName);
             if (inheritedContract && this._compilationProcessor._processedContracts.indexOf(inheritedContractName) < 0) {
                 const contractProcessor = new ContractProcessor(this._compilationProcessor, inheritedContract);
-                contractProcessor._currentStorageSlot += this._currentStorageSlot; // needed if we have multiple inherited contracts (which would all start at 0 slot)
+                contractProcessor._currentStorageSlot = contractProcessor._currentStorageSlot.add(this._currentStorageSlot); // needed if we have multiple inherited contracts (which would all start at 0 slot)
                 contractProcessor.process();
                 this._contract.inheritedContracts.push(inheritedContract);
                 for (let i = 0; i < inheritedContract.stateVariables.length; i++) {

@@ -3,16 +3,14 @@ import { LibSdbTypes } from "../../types";
 import { decode as decodeValue } from "./value";
 import { BN } from "bn.js";
 
-export async function decode(position: number, offset: number, length: number, detail: LibSdbTypes.ValueDetail | LibSdbTypes.EnumDetail, _interface: LibSdbInterface, address: string): Promise<string> {
+export async function decode(position: BN, offset: number, length: number, detail: LibSdbTypes.ValueDetail | LibSdbTypes.EnumDetail, _interface: LibSdbInterface, address: string): Promise<string> {
     let value = "";
 
     if (position === null) {
         value = "(storage location undefined)";
     }
     else {
-        let key: Buffer = new Buffer(32);
-        key[31] = position; // TODO: hackinahack
-        const content = await _interface.requestStorage(address, key);
+        const content = await _interface.requestStorage(address, position.toBuffer("be", 32));
         let end = content.value.length - offset;
         let start = end - length;
         if (start < 0) {

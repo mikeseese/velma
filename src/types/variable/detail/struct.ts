@@ -7,7 +7,7 @@ import { VariableProcessor } from "../definition/processor";
 
 export class StructDetail {
     variable: Variable;
-    position: number; // either the slot number or relative position in stack/memory
+    position: BN; // either the slot number or relative position in stack/memory
     location: VariableLocation;
     isPointer: boolean; // pointer vs reference (used for storage locations)
     offset: number | null; // used for storage locations
@@ -21,6 +21,7 @@ export class StructDetail {
 
     constructor(variable: Variable) {
         this.variable = variable;
+        this.position = new BN(0);
         this.id = Variable.nextId++;
         this.members = [];
     }
@@ -90,8 +91,8 @@ export class StructDetail {
     async decodeChildren(stack: BN[], memory: (number | null)[], _interface: LibSdbInterface, address: string): Promise<DecodedVariable[]> {
         let decodedVariables: DecodedVariable[] = [];
 
-        if (this.isPointer && this.variable.position) {
-            this.position = stack[this.variable.position].toNumber();
+        if (this.isPointer && this.variable.position && this.variable.position < stack.length) {
+            this.position = stack[this.variable.position].clone();
             this.assignMemberPositions();
         }
 
