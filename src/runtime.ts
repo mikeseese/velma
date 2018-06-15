@@ -178,7 +178,7 @@ export class LibSdbRuntime extends EventEmitter {
                     const sourceLocation = LibSdbUtils.SourceMappingDecoder.atIndex(index, bytecode.srcMap);
 
                     if (data.content.specialEvents.indexOf("fnJumpDestination") >= 0) {
-                        this.processJumpIn(sourceLocation, contract, data.content.stack, true);
+                        this.processJumpIn(sourceLocation, contract, data.content.stack);
                     }
                     else if (data.content.specialEvents.indexOf("jump") >= 0) {
                         let processedJump: boolean = false;
