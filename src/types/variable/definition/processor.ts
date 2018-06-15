@@ -524,6 +524,7 @@ export class VariableProcessor {
         else if (detail instanceof ContractDetail) {
             this.storageCheckSpaceLeft(detail.storageLength);
             this.applyStoragePosition(detail);
+            this.storageIncrementOffset(detail.storageLength);
             this.storageCheckEndOfSlot();
         }
     }
