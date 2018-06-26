@@ -31,4 +31,4 @@ The biggest feature we gain from this is arbitrary code execution. We can inject
 _TODO: demo gif of arbitrary code exec here_
 
 ## Final Thoughts
-Velma was written completely by Mike Seese (@seesemichaelj). While Mike now works fulltime with the awesome [Truffle](https://truffleframework.com) team, Velma is a side project for Mike and currently has no affilation with Truffle's debugger. With that said, do note that this is not maintained by a full-time developer, and the frequency of updates will be diminished because of such.
+Velma was written completely by Mike Seese ([@seesemichaelj](https://github.com/seesemichaelj)). While Mike now works fulltime with the awesome [Truffle](https://truffleframework.com) team, Velma is a side project for Mike and currently has no affilation with Truffle's debugger. With that said, do note that this is not maintained by a full-time developer, and the frequency of updates will be diminished because of such.
