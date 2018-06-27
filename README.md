@@ -1,13 +1,12 @@
 # <img src="https://user-images.githubusercontent.com/549323/41639879-a6eeb290-742d-11e8-8ece-bb1c292b407a.png" alt="" width="100" height="auto" valign="middle"> Velma Solidity Debugger
 Real-time Solidity Debugger and [Associated VS Code Integration](https://github.com/mikeseese/vscode-velma-debug)
 
-![Stepping](https://i.imgur.com/krH5uFb.gifv)
-
 _Stepping_
-
-![Constructor and Contract State](https://i.imgur.com/cQ5Cy0Y.gifv)
+![Stepping](https://i.imgur.com/krH5uFb.gif)
 
 _Constructor and Contract State_
+![Constructor and Contract State](https://i.imgur.com/cQ5Cy0Y.gif)
+
 
 ## Get Started!
 Checkout the [Velma sample project](https://github.com/mikeseese/velma-sample/blob/master/README.md) to see how you can get started with debugging with Velma. We're definitely looking to streamline the process of using Velma, but we currently highly recommend to follow the instructions in the sample project's `README` to get started.
@@ -31,4 +30,5 @@ Velma uses a different method for debugging. Velma directly ties in with the Eth
 
 The biggest feature we gain from this is arbitrary code execution. We can inject code directly into the EVM to execute some piece of Solidity the user inputs, run it, and return the result. This is ran **in the context** of the running transaction. Pretty cool stuff if you ask me!
 
-![Arbitrary Code Execution](https://i.imgur.com/yN1UE3x.gifv)
+_Arbitrary Code Execution_
+![Arbitrary Code Execution](https://i.imgur.com/yN1UE3x.gif)
