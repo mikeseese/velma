@@ -4,6 +4,9 @@ Real-time Solidity Debugger and [Associated VS Code Integration](https://github.
 _Stepping_
 ![Stepping](https://i.imgur.com/krH5uFb.gif)
 
+_Stepping Into_
+![Stepping Into](https://i.imgur.com/JUYvXbz.gif)
+
 _Constructor and Contract State_
 ![Constructor and Contract State](https://i.imgur.com/cQ5Cy0Y.gif)
 
