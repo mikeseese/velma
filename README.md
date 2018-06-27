@@ -1,13 +1,12 @@
 # <img src="https://user-images.githubusercontent.com/549323/41639879-a6eeb290-742d-11e8-8ece-bb1c292b407a.png" alt="" width="100" height="auto" valign="middle"> Velma Solidity Debugger
 Real-time Solidity Debugger and [Associated VS Code Integration](https://github.com/seeseplusplus/vscode-velma-debug)
 
-![Stepping](https://i.imgur.com/krH5uFb.gifv)
-
 _Stepping_
-
-![Constructor and Contract State](https://i.imgur.com/cQ5Cy0Y.gifv)
+![Stepping](https://i.imgur.com/krH5uFb.gif)
 
 _Constructor and Contract State_
+![Constructor and Contract State](https://i.imgur.com/cQ5Cy0Y.gif)
+
 
 ## Get Status Updates About Releases!
 Follow us on Twitter at https://twitter.com/seeseplusplus to get updates about new releases/etc about Velma
@@ -34,9 +33,8 @@ Velma uses a different method for debugging. Velma directly ties in with the Eth
 
 The biggest feature we gain from this is arbitrary code execution. We can inject code directly into the EVM to execute some piece of Solidity the user inputs, run it, and return the result. This is ran **in the context** of the running transaction. Pretty cool stuff if you ask me!
 
-![Arbitrary Code Execution](https://i.imgur.com/yN1UE3x.gifv)
-
 _Arbitrary Code Execution_
+![Arbitrary Code Execution](https://i.imgur.com/yN1UE3x.gif)
 
 ## Final Thoughts
 Velma was written completely by Mike Seese ([@seesemichaelj](https://github.com/seesemichaelj)). While Mike now works full-time with the awesome [Truffle](https://truffleframework.com) team, Velma is a side project for Mike and currently has no affilation with Truffle's debugger. With that said, do note that this is not maintained by a full-time developer, and the frequency of updates will be diminished because of such.
