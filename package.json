@@ -1,16 +1,17 @@
 {
-  "name": "solidity-debugger",
+  "name": "velma",
   "version": "1.0.0-rc.1",
   "description": "",
   "main": "./out/index",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc --baseUrl .",
-    "postinstall": "npm run build"
+    "postinstall": "npm run build",
+    "prepublish": "npm run build"
   },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@gitlab.com/seeseplusplus/solidity-debugger.git"
+    "url": "git+ssh://git@gitlab.com/seeseplusplus/velma.git"
   },
   "publisher": "SeesePlusPlus",
   "author": {
@@ -19,23 +20,22 @@
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://gitlab.com/seeseplusplus/solidity-debugger/issues"
+    "url": "https://gitlab.com/seeseplusplus/velma/issues"
   },
-  "homepage": "https://gitlab.com/seeseplusplus/solidity-debugger#README",
+  "homepage": "https://gitlab.com/seeseplusplus/velma#README",
   "dependencies": {
-    "@types/node": "^8.0.53",
-    "bignumber.js": "^6.0.0",
     "bn.js": "^4.11.8",
     "circular-json": "^0.4.0",
     "net": "^1.0.2",
-    "solc": "0.4.18",
-    "solidity-parser": "https://github.com/seeseplusplus/solidity-parser.git#introduce-velma",
+    "solc": "0.4.24",
+    "@velma/solidity-parser": "0.5.0",
     "traverse": "^0.6.6",
     "uuid": "^3.1.0",
     "vscode-debugprotocol": "1.27.0",
     "ws": "4.0.0"
   },
   "devDependencies": {
+    "@types/node": "^8.0.53",
     "@types/ws": "^4.0.0"
   }
 }
