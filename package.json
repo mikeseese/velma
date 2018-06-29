@@ -1,13 +1,12 @@
 {
   "name": "velma",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "description": "",
   "main": "./out/index",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc --baseUrl .",
-    "postinstall": "npm run build",
-    "prepublish": "npm run build"
+    "prepare": "npm run build"
   },
   "repository": {
     "type": "git",
