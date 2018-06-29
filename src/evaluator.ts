@@ -1,4 +1,4 @@
-const parseExpression = require("solidity-parser").parse;
+const parseExpression = require("@velma/solidity-parser").parse;
 const traverse = require("traverse");
 const uuidv4 = require("uuid").v4;
 
