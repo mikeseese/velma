@@ -1,3 +1,6 @@
+# :warning: This repository is no longer maintained
+Due to conflict of interests, I am no longer able to support development on Velma. Please feel free to fork it!
+
 # <img src="https://user-images.githubusercontent.com/549323/41639879-a6eeb290-742d-11e8-8ece-bb1c292b407a.png" alt="" width="100" height="auto" valign="middle"> Velma Solidity Debugger
 Real-time Solidity Debugger and [Associated VS Code Integration](https://github.com/mikeseese/vscode-velma-debug)
 
